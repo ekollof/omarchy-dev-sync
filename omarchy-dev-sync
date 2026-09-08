@@ -1,0 +1,279 @@
+#!/bin/bash
+
+# Sync an Omarchy checkout with upstream and rebuild an integration branch
+# from your open PRs, so an `omarchy dev link` environment tests every
+# PR patch together.
+
+set -euo pipefail
+
+repo=${OMARCHY_DEV_SYNC_REPO:-"$HOME/src/omarchy"}
+upstream=${OMARCHY_DEV_SYNC_UPSTREAM:-origin}
+fork=${OMARCHY_DEV_SYNC_FORK:-fork}
+head=${OMARCHY_DEV_SYNC_HEAD:-quattro}
+integration=${OMARCHY_DEV_SYNC_INTEGRATION:-integration-prs}
+config_dir=${OMARCHY_DEV_SYNC_CONFIG:-"$HOME/.config/omarchy-dev-sync"}
+restart=1
+
+usage() {
+  cat <<USAGE
+Usage: omarchy-dev-sync [--no-restart]
+
+Fetch $upstream/$head and rebuild $integration by merging every open PR
+of yours (plus optional extra branches) so an omarchy-dev-link checkout
+runs them together.
+
+  --no-restart  Do not restart the live Omarchy shell after a successful rebuild.
+
+Environment:
+  OMARCHY_DEV_SYNC_REPO          Omarchy checkout (default: ~/src/omarchy)
+  OMARCHY_DEV_SYNC_UPSTREAM      Upstream remote (default: origin)
+  OMARCHY_DEV_SYNC_FORK          Your fork remote (default: fork)
+  OMARCHY_DEV_SYNC_HEAD          Upstream branch (default: quattro)
+  OMARCHY_DEV_SYNC_INTEGRATION   Integration branch (default: integration-prs)
+  OMARCHY_DEV_SYNC_CONFIG        Config directory (default: ~/.config/omarchy-dev-sync)
+
+Optional extra branches (one name per line, # comments allowed):
+  $config_dir/extra-branches
+USAGE
+}
+
+while (($#)); do
+  case "$1" in
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    --no-restart)
+      restart=0
+      shift
+      ;;
+    *)
+      echo "Error: unknown option: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ ! -d $repo/.git ]]; then
+  echo "Error: not a git repo: $repo" >&2
+  exit 1
+fi
+cd "$repo"
+repo=$(git rev-parse --show-toplevel)
+
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "Error: $repo has uncommitted changes. Commit or stash them, then rerun." >&2
+  exit 1
+fi
+
+command -v gh >/dev/null || { echo "Error: gh not installed." >&2; exit 1; }
+
+upstream_url=$(git remote get-url "$upstream")
+slug=${upstream_url#*github.com[:/]}
+slug=${slug%.git}
+
+start_branch=$(git branch --show-current)
+
+git config rerere.enabled true
+git config rerere.autoUpdate true
+
+git fetch "$upstream" --prune
+git fetch "$fork" --prune
+
+# Fast-forward the local head branch from upstream. A failure means the local
+# branch diverged; warn and keep going with the remote tip for the merge.
+if ! git fetch "$upstream" "$head:$head" 2>/dev/null; then
+  echo "Warning: local $head diverged from $upstream/$head; not updated." >&2
+fi
+
+declare -A pr_seen=()
+pr_branches=()
+pr_labels=()
+while IFS=$'\t' read -r number name title; do
+  [[ -n $name ]] || continue
+  [[ -z ${pr_seen[$name]+x} ]] || continue
+  pr_seen[$name]=1
+  pr_branches+=("$name")
+  pr_labels+=("#$number $name"$'\t'"$title")
+done < <(gh pr list --repo "$slug" --author @me --state open --json number,title,headRefName --jq '.[] | [.number, .headRefName, .title] | @tsv' | sort -t$'\t' -k2,2)
+
+if (( ${#pr_branches[@]} == 0 )); then
+  echo "No open PRs found for $slug; syncing $head only."
+fi
+
+# Branches merged beyond open PRs. Delete a line once its PR opens;
+# gh picks it up automatically.
+extra_branches=()
+extra_file=$config_dir/extra-branches
+if [[ -f $extra_file ]]; then
+  mapfile -t extra_branches < <(grep -vE '^[[:space:]]*(#|$)' "$extra_file" || true)
+fi
+
+for branch in "${extra_branches[@]}"; do
+  if [[ -n ${pr_seen[$branch]+x} ]]; then
+    echo "Warning: extra-branches lists $branch, which already has an open PR; remove that line." >&2
+  fi
+done
+
+branch_worktree() {
+  local branch=$1
+  git worktree list --porcelain | awk -v b="refs/heads/$branch" '
+    $1 == "worktree" { path = $2 }
+    $1 == "branch" && $2 == b { print path; exit }
+  '
+}
+
+merge_refs=()
+for branch in "${pr_branches[@]}" "${extra_branches[@]}"; do
+  [[ $branch == "$integration" ]] && continue
+  worktree=$(branch_worktree "$branch")
+  if [[ -n $worktree && $worktree != "$repo" ]]; then
+    echo "Warning: $branch is checked out in $worktree; merging $fork/$branch without updating local." >&2
+  elif ! git fetch "$fork" "$branch:$branch" 2>/dev/null; then
+    echo "Warning: local $branch not fast-forwardable; merging $fork/$branch as-is." >&2
+  fi
+  if git show-ref --verify --quiet "refs/remotes/$fork/$branch"; then
+    merge_refs+=("$fork/$branch")
+  else
+    echo "Warning: $branch not found on $fork remote; skipping." >&2
+  fi
+done
+
+if (( ${#merge_refs[@]} > 0 )); then
+  mapfile -t merge_refs < <(printf '%s\n' "${merge_refs[@]}" | sort -u)
+fi
+
+old_integration=$(git rev-parse --verify "refs/heads/$integration" 2>/dev/null || true)
+
+# The colour_only/denied template lists in theme-staging-test.sh are
+# append-only sets: upstream and PRs each add entries, so the conflict is
+# always two versions of one array line. A sorted union of both sides is the
+# correct resolution, and the test itself fails loudly if a template is
+# misplaced, so a wrong union gets caught downstream.
+resolve_theme_staging_union() {
+  local conflicted
+  conflicted=$(git diff --name-only --diff-filter=U)
+  [[ $conflicted == "test/shell.d/theme-staging-test.sh" ]] || return 1
+  python3 - <<'PYEOF' || return 1
+import re
+p = "test/shell.d/theme-staging-test.sh"
+s = open(p).read()
+pattern = r"<<<<<<< HEAD\n(.*?)\n=======\n(.*?)\n>>>>>>> [^\n]*\n"
+blocks = re.findall(pattern, s, re.S)
+if not blocks:
+    raise SystemExit(1)
+for ours, theirs in blocks:
+    m1 = re.fullmatch(r"(\w+)=\((.*)\)", ours)
+    m2 = re.fullmatch(r"(\w+)=\((.*)\)", theirs)
+    if not (m1 and m2 and m1.group(1) == m2.group(1)):
+        raise SystemExit(1)
+    items = dict.fromkeys(m1.group(2).split() + m2.group(2).split())
+    union = m1.group(1) + "=(" + " ".join(sorted(items)) + ")"
+    s, n = re.subn(pattern, union + "\n", s, count=1, flags=re.S)
+    if n != 1:
+        raise SystemExit(1)
+open(p, "w").write(s)
+PYEOF
+}
+
+git checkout -q --no-track -B "$integration" "$upstream/$head"
+
+restore_on_failure() {
+  local conflicted
+  conflicted=$(git diff --name-only --diff-filter=U || true)
+  git merge --abort 2>/dev/null || true
+  if [[ -n $old_integration ]]; then
+    git checkout -B "$integration" "$old_integration"
+  fi
+  if [[ -n $start_branch ]]; then
+    git checkout "$start_branch"
+  fi
+  echo "Error: merge conflict while building $integration. Old state restored. Resolve by hand." >&2
+  if [[ -n $conflicted ]]; then
+    echo "Conflicted files:" >&2
+    while IFS= read -r file; do
+      printf '  %s\n' "$file" >&2
+    done <<<"$conflicted"
+  fi
+  exit 1
+}
+
+if (( ${#merge_refs[@]} > 0 )); then
+  echo "Merging ${#merge_refs[@]} branches into $integration:"
+  if (( ${#pr_labels[@]} > 0 )); then
+    printf '  %s\n' "${pr_labels[@]}"
+  fi
+  for branch in "${extra_branches[@]}"; do
+    [[ -n ${pr_seen[$branch]+x} ]] && continue
+    echo "  extra $branch"
+  done
+  for ref in "${merge_refs[@]}"; do
+    if ! git merge --no-edit "$ref" >/dev/null 2>&1; then
+      # rerere replays known resolutions and stages them; an unresolved
+      # conflict still shows up in the index.
+      if [[ -n $(git diff --name-only --diff-filter=U) ]]; then
+        resolve_theme_staging_union || restore_on_failure
+        if [[ -n $(git diff --name-only --diff-filter=U) ]]; then
+          restore_on_failure
+        fi
+        git add test/shell.d/theme-staging-test.sh
+      fi
+      git commit --no-edit >/dev/null
+    fi
+  done
+fi
+
+push_status="push skipped"
+if [[ -n $old_integration ]]; then
+  if git push --quiet "$fork" "refs/heads/$integration" --force-with-lease="refs/heads/$integration:$old_integration"; then
+    push_status="pushed to $fork"
+    git branch -u "$fork/$integration" >/dev/null
+  else
+    push_status="push skipped (remote moved or push failed)"
+    echo "Warning: $push_status." >&2
+  fi
+fi
+
+newest=$(git rev-parse --short HEAD)
+pr_count=${#merge_refs[@]}
+
+warn_packaged_skew() {
+  local cmd pkg skewed=()
+  for cmd in "$repo"/bin/omarchy-*; do
+    [[ -f $cmd ]] || continue
+    # Only helpers that compare checkout vs pkexec target and fail closed.
+    grep -q 'privileged_copy_matches' "$cmd" 2>/dev/null || continue
+    pkg=/usr/bin/${cmd##*/}
+    [[ -f $pkg ]] || continue
+    cmp -s "$cmd" "$pkg" && continue
+    skewed+=("${cmd##*/}")
+  done
+  (( ${#skewed[@]} > 0 )) || return 0
+  echo "Note: checkout and packaged copies differ for: ${skewed[*]}"
+  echo "      pkexec runs /usr/bin; those helpers refuse to elevate until omarchy-dev-pkg-test refreshes the package."
+}
+
+restart_live_shell() {
+  local session_path
+  (( restart )) || return 0
+  session_path=$(systemctl --user show-environment 2>/dev/null | sed -n 's/^OMARCHY_PATH=//p' | tail -n 1)
+  [[ $session_path == "$repo" ]] || return 0
+  command -v omarchy-restart-shell >/dev/null || return 0
+  if omarchy-restart-shell; then
+    echo "Restarted the live Omarchy shell so it runs this $integration build."
+  else
+    echo "Warning: $integration rebuilt, but the live shell was not restarted." >&2
+  fi
+}
+
+warn_packaged_skew
+restart_live_shell
+
+if command -v omarchy-notification-send >/dev/null; then
+  omarchy-notification-send "omarchy-dev-sync" "$integration rebuilt on $upstream/$head: $pr_count PRs, $newest. $push_status." >/dev/null 2>&1 || true
+fi
+
+echo "Upstream $head: $(git rev-parse --short "$upstream/$head")"
+echo "$integration: $newest ($pr_count PRs). $push_status."
+echo "Checked out in $repo; dev-link environment now runs the integration build."
