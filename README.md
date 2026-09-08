@@ -40,16 +40,28 @@ Skip the shell restart with `omarchy-dev-sync --no-restart`.
 
 ## Configuration
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `OMARCHY_DEV_SYNC_REPO` | `~/src/omarchy` | Omarchy checkout |
-| `OMARCHY_DEV_SYNC_UPSTREAM` | `origin` | Upstream remote |
-| `OMARCHY_DEV_SYNC_FORK` | `fork` | Your fork remote |
-| `OMARCHY_DEV_SYNC_HEAD` | `quattro` | Upstream branch |
-| `OMARCHY_DEV_SYNC_INTEGRATION` | `integration-prs` | Integration branch to rebuild |
-| `OMARCHY_DEV_SYNC_CONFIG` | `~/.config/omarchy-dev-sync` | Config directory |
+Settings live in `~/.config/omarchy-dev-sync/` (override the directory with `OMARCHY_DEV_SYNC_CONFIG`).
 
-To merge a branch **before** its PR is open, put the branch name in `~/.config/omarchy-dev-sync/extra-branches` (one per line, `#` comments allowed). Delete the line once the PR exists; `gh` will pick it up.
+`config` is sourced as bash. Environment variables still win over the file.
+
+```bash
+# ~/.config/omarchy-dev-sync/config
+repo=$HOME/src/omarchy
+upstream=origin
+fork=fork
+head=quattro
+integration=integration-prs
+```
+
+| File / variable | Default | Meaning |
+|---|---|---|
+| `config` `repo` / `OMARCHY_DEV_SYNC_REPO` | `~/src/omarchy` | Omarchy checkout |
+| `config` `upstream` / `OMARCHY_DEV_SYNC_UPSTREAM` | `origin` | Upstream remote |
+| `config` `fork` / `OMARCHY_DEV_SYNC_FORK` | `fork` | Your fork remote |
+| `config` `head` / `OMARCHY_DEV_SYNC_HEAD` | `quattro` | Upstream branch |
+| `config` `integration` / `OMARCHY_DEV_SYNC_INTEGRATION` | `integration-prs` | Integration branch to rebuild |
+
+To merge a branch **before** its PR is open, put the branch name in `extra-branches` (one per line, `#` comments allowed). Delete the line once the PR exists; `gh` will pick it up.
 
 ## Notes
 

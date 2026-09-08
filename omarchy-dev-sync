@@ -6,13 +6,24 @@
 
 set -euo pipefail
 
-repo=${OMARCHY_DEV_SYNC_REPO:-"$HOME/src/omarchy"}
-upstream=${OMARCHY_DEV_SYNC_UPSTREAM:-origin}
-fork=${OMARCHY_DEV_SYNC_FORK:-fork}
-head=${OMARCHY_DEV_SYNC_HEAD:-quattro}
-integration=${OMARCHY_DEV_SYNC_INTEGRATION:-integration-prs}
 config_dir=${OMARCHY_DEV_SYNC_CONFIG:-"$HOME/.config/omarchy-dev-sync"}
+repo=$HOME/src/omarchy
+upstream=origin
+fork=fork
+head=quattro
+integration=integration-prs
 restart=1
+
+if [[ -f $config_dir/config ]]; then
+  # shellcheck disable=SC1091
+  source "$config_dir/config"
+fi
+
+repo=${OMARCHY_DEV_SYNC_REPO:-$repo}
+upstream=${OMARCHY_DEV_SYNC_UPSTREAM:-$upstream}
+fork=${OMARCHY_DEV_SYNC_FORK:-$fork}
+head=${OMARCHY_DEV_SYNC_HEAD:-$head}
+integration=${OMARCHY_DEV_SYNC_INTEGRATION:-$integration}
 
 usage() {
   cat <<USAGE
@@ -24,16 +35,17 @@ runs them together.
 
   --no-restart  Do not restart the live Omarchy shell after a successful rebuild.
 
-Environment:
-  OMARCHY_DEV_SYNC_REPO          Omarchy checkout (default: ~/src/omarchy)
-  OMARCHY_DEV_SYNC_UPSTREAM      Upstream remote (default: origin)
-  OMARCHY_DEV_SYNC_FORK          Your fork remote (default: fork)
-  OMARCHY_DEV_SYNC_HEAD          Upstream branch (default: quattro)
-  OMARCHY_DEV_SYNC_INTEGRATION   Integration branch (default: integration-prs)
-  OMARCHY_DEV_SYNC_CONFIG        Config directory (default: ~/.config/omarchy-dev-sync)
-
-Optional extra branches (one name per line, # comments allowed):
+Config (bash assignments, then extra-branches):
+  $config_dir/config
   $config_dir/extra-branches
+
+Environment overrides the config file:
+  OMARCHY_DEV_SYNC_REPO          Omarchy checkout (default: $repo)
+  OMARCHY_DEV_SYNC_UPSTREAM      Upstream remote (default: $upstream)
+  OMARCHY_DEV_SYNC_FORK          Your fork remote (default: $fork)
+  OMARCHY_DEV_SYNC_HEAD          Upstream branch (default: $head)
+  OMARCHY_DEV_SYNC_INTEGRATION   Integration branch (default: $integration)
+  OMARCHY_DEV_SYNC_CONFIG        Config directory (default: ~/.config/omarchy-dev-sync)
 USAGE
 }
 
