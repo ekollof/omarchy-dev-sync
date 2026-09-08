@@ -102,13 +102,21 @@ fi
 declare -A pr_seen=()
 pr_branches=()
 pr_labels=()
+# Process substitution does not trip `set -e`; capture gh's status ourselves
+# so an API timeout cannot look like "no open PRs" and strip the integration
+# branch down to upstream.
+pr_tsv=
+if ! pr_tsv=$(gh pr list --repo "$slug" --author @me --state open --json number,title,headRefName --jq '.[] | [.number, .headRefName, .title] | @tsv'); then
+  echo "Error: gh pr list failed (GitHub API unreachable?). Leaving $integration alone." >&2
+  exit 1
+fi
 while IFS=$'\t' read -r number name title; do
   [[ -n $name ]] || continue
   [[ -z ${pr_seen[$name]+x} ]] || continue
   pr_seen[$name]=1
   pr_branches+=("$name")
   pr_labels+=("#$number $name"$'\t'"$title")
-done < <(gh pr list --repo "$slug" --author @me --state open --json number,title,headRefName --jq '.[] | [.number, .headRefName, .title] | @tsv' | sort -t$'\t' -k2,2)
+done < <(printf '%s\n' "$pr_tsv" | sort -t$'\t' -k2,2)
 
 if (( ${#pr_branches[@]} == 0 )); then
   echo "No open PRs found for $slug; syncing $head only."
@@ -253,7 +261,7 @@ if git fetch --quiet "$fork" "$integration" 2>/dev/null; then
   remote_tip=$(git rev-parse --verify "refs/remotes/$fork/$integration" 2>/dev/null || true)
 else
   remote_tip=
-  echo "Warning: could not re-fetch $fork/$integration before push." >&2
+  echo "Warning: could not re-fetch $fork/$integration; not pushing." >&2
 fi
 if [[ -n $remote_tip ]]; then
   if git push --quiet "$fork" "refs/heads/$integration" --force-with-lease="refs/heads/$integration:$remote_tip"; then
@@ -263,10 +271,12 @@ if [[ -n $remote_tip ]]; then
     push_status="push skipped (remote moved during push or push failed)"
     echo "Warning: $push_status." >&2
   fi
+elif git show-ref --verify --quiet "refs/remotes/$fork/$integration"; then
+  echo "Warning: push skipped (could not refresh $fork/$integration)." >&2
 elif git push --quiet -u "$fork" "refs/heads/$integration"; then
   push_status="pushed to $fork (new branch)"
 else
-  echo "Warning: push skipped (no $fork/$integration yet, and create failed)." >&2
+  echo "Warning: push skipped (creating $fork/$integration failed)." >&2
 fi
 
 newest=$(git rev-parse --short HEAD)
