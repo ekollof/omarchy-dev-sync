@@ -11,7 +11,8 @@ If you keep several Omarchy PRs in flight, testing them one branch at a time mis
 3. Fast-forwards each PR branch from the fork (or merges the remote tip if the local branch cannot fast-forward).
 4. Checks out `$upstream/quattro` as `integration-prs` and merges every PR branch into it.
 5. Force-pushes `integration-prs` to the fork with `--force-with-lease`.
-6. Restarts the live Omarchy shell when this checkout is the session `OMARCHY_PATH`.
+6. Rebuilds and installs the `omarchy-settings-dev` and `omarchy-dev` packages from the rebuilt checkout when the packaged copies behind pkexec have gone stale, so helpers like `omarchy-windows-vm` keep elevating. Both packages go into a single pacman transaction (installed separately, the settings package conflicts with the installed release omarchy).
+7. Restarts the live Omarchy shell when this checkout is the session `OMARCHY_PATH`.
 
 Known append-only conflicts in `test/shell.d/theme-staging-test.sh` (`colour_only` / `denied` arrays) are resolved as a sorted union. Anything else aborts the rebuild and restores the previous integration branch.
 
@@ -22,6 +23,7 @@ Known append-only conflicts in `test/shell.d/theme-staging-test.sh` (`colour_onl
   - `fork` → your GitHub fork
 - [`gh`](https://cli.github.com/) authenticated as the PR author
 - Optional: `omarchy dev link` pointing at that clone
+- Optional, for the automatic package refresh: an [omarchy-pkgs](https://github.com/omacom/omarchy-pkgs) checkout at `~/Work/omarchy/omarchy-pkgs` (or `OMARCHY_PKGBUILDS_DIR` pointed at one), and sudo for the pacman install
 
 ## Install
 
@@ -36,7 +38,7 @@ Then from anywhere:
 omarchy-dev-sync
 ```
 
-Skip the shell restart with `omarchy-dev-sync --no-restart`.
+Skip the shell restart with `omarchy-dev-sync --no-restart`. Skip the package rebuild with `--no-pkg`.
 
 ## Configuration
 
@@ -66,5 +68,5 @@ To merge a branch **before** its PR is open, put the branch name in `extra-branc
 ## Notes
 
 - The working tree of the Omarchy checkout must be clean.
-- `pkexec` still runs packaged copies under `/usr/bin`. Helpers that compare checkout vs package (today: `omarchy-windows-vm`) will refuse to elevate until you refresh the package with `omarchy-dev-pkg-test`.
+- The package refresh only runs when the checkout and the installed package actually differ (`omarchy-windows-vm` and similar helpers compare the two and refuse to elevate on skew); `--no-pkg` skips it entirely.
 - This is not part of Omarchy itself. It is a personal workflow published in case it is useful to other people with a stack of open PRs.

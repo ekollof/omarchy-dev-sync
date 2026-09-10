@@ -13,6 +13,7 @@ fork=fork
 head=quattro
 integration=integration-prs
 restart=1
+pkg_build=1
 
 if [[ -f $config_dir/config ]]; then
   # shellcheck disable=SC1091
@@ -24,16 +25,20 @@ upstream=${OMARCHY_DEV_SYNC_UPSTREAM:-$upstream}
 fork=${OMARCHY_DEV_SYNC_FORK:-$fork}
 head=${OMARCHY_DEV_SYNC_HEAD:-$head}
 integration=${OMARCHY_DEV_SYNC_INTEGRATION:-$integration}
+restart=${OMARCHY_DEV_SYNC_RESTART:-$restart}
+pkg_build=${OMARCHY_DEV_SYNC_PKG:-$pkg_build}
 
 usage() {
   cat <<USAGE
-Usage: omarchy-dev-sync [--no-restart]
+Usage: omarchy-dev-sync [--no-restart] [--no-pkg]
 
 Fetch $upstream/$head and rebuild $integration by merging every open PR
 of yours (plus optional extra branches) so an omarchy-dev-link checkout
 runs them together.
 
   --no-restart  Do not restart the live Omarchy shell after a successful rebuild.
+  --no-pkg      Do not rebuild and install the dev packages after a successful
+                rebuild.
 
 Config (bash assignments, then extra-branches):
   $config_dir/config
@@ -45,7 +50,8 @@ Environment overrides the config file:
   OMARCHY_DEV_SYNC_FORK          Your fork remote (default: $fork)
   OMARCHY_DEV_SYNC_HEAD          Upstream branch (default: $head)
   OMARCHY_DEV_SYNC_INTEGRATION   Integration branch (default: $integration)
-  OMARCHY_DEV_SYNC_CONFIG        Config directory (default: ~/.config/omarchy-dev-sync)
+  OMARCHY_DEV_SYNC_PKG           Rebuild+install dev packages (default: 1)
+  OMARCHY_DEV_SYNC_CONFIG        Config directory (default: $config_dir)
 USAGE
 }
 
@@ -57,6 +63,10 @@ while (($#)); do
       ;;
     --no-restart)
       restart=0
+      shift
+      ;;
+    --no-pkg)
+      pkg_build=0
       shift
       ;;
     *)
@@ -282,20 +292,94 @@ fi
 newest=$(git rev-parse --short HEAD)
 pr_count=${#merge_refs[@]}
 
-warn_packaged_skew() {
-  local cmd pkg skewed=()
+# Helpers that fail closed when the checkout and the packaged copy differ,
+# i.e. exactly the ones that refuse to elevate on a stale package.
+packaged_skew() {
+  PACKAGED_SKEW=()
+  local cmd pkg
   for cmd in "$repo"/bin/omarchy-*; do
     [[ -f $cmd ]] || continue
-    # Only helpers that compare checkout vs pkexec target and fail closed.
     grep -q 'privileged_copy_matches' "$cmd" 2>/dev/null || continue
     pkg=/usr/bin/${cmd##*/}
     [[ -f $pkg ]] || continue
     cmp -s "$cmd" "$pkg" && continue
-    skewed+=("${cmd##*/}")
+    PACKAGED_SKEW+=("${cmd##*/}")
   done
-  (( ${#skewed[@]} > 0 )) || return 0
-  echo "Note: checkout and packaged copies differ for: ${skewed[*]}"
-  echo "      pkexec runs /usr/bin; those helpers refuse to elevate until omarchy-dev-pkg-test refreshes the package."
+  (( ${#PACKAGED_SKEW[@]} > 0 ))
+}
+
+# Rebuild and install the dev packages from the rebuilt checkout, so the
+# packaged copies pkexec runs match the integration tree. The settings and
+# main dev packages replace their release counterparts and depend on each
+# other, so they go into a single pacman transaction: installed separately,
+# the settings package conflicts with the release omarchy that still depends
+# on the old omarchy-settings, and pacman answers its remove-conflict prompt
+# with the --noconfirm default (no) and aborts.
+rebuild_dev_packages() {
+  local pkgbuilds_dir build_dir sha dirty pkg dir built
+  local -a built_pkgs=()
+  pkgbuilds_dir=${OMARCHY_PKGBUILDS_DIR:-$HOME/Work/omarchy/omarchy-pkgs/pkgbuilds}
+  if [[ ! -f $pkgbuilds_dir/omarchy-dev/PKGBUILD ]]; then
+    echo "Note: no omarchy-pkgs checkout at $pkgbuilds_dir; leaving the installed package stale."
+    echo "      Clone omacom/omarchy-pkgs there (or point OMARCHY_PKGBUILDS_DIR at one) to automate this."
+    return 1
+  fi
+  if ! command -v makepkg >/dev/null; then
+    echo "Note: makepkg not found; leaving the installed package stale." >&2
+    return 1
+  fi
+  sha=$(git -C "$repo" rev-parse --short HEAD)
+  dirty=""
+  if [[ -n $(git -C "$repo" status --porcelain) ]]; then
+    dirty=".dirty"
+  fi
+  build_dir=$(mktemp -d -t omarchy-dev-sync-pkg.XXXXXX) || return 1
+  for pkg in omarchy-settings-dev omarchy-dev; do
+    dir="$build_dir/$pkg"
+    cp -a "$pkgbuilds_dir/$pkg" "$dir" || return 1
+    # Drop the upstream pkgver() so the built package is tagged dev.<sha>.
+    if ! awk '
+      /^pkgver\(\)[[:space:]]*\{/ {
+        in_pkgver = 1
+        depth = 0
+      }
+      in_pkgver {
+        line = $0
+        opens = gsub(/\{/, "{", line)
+        line = $0
+        closes = gsub(/\}/, "}", line)
+        depth += opens - closes
+        if (depth <= 0) {
+          in_pkgver = 0
+        }
+        next
+      }
+      { print }
+    ' "$dir/PKGBUILD" >"$dir/PKGBUILD.tmp" || ! mv "$dir/PKGBUILD.tmp" "$dir/PKGBUILD"; then
+      echo "Warning: could not rewrite the pkgver of $pkg." >&2
+      return 1
+    fi
+    sed -i "s/^pkgver=.*/pkgver=dev.$sha$dirty/" "$dir/PKGBUILD"
+  done
+  for pkg in omarchy-settings-dev omarchy-dev; do
+    dir="$build_dir/$pkg"
+    # -d: omarchy-dev lists omarchy-settings-dev as a dependency that only
+    # exists after the single-transaction install below.
+    if ! (cd "$dir" && OMARCHY_SRC="$repo" makepkg -d --skipchecksums --noconfirm >/dev/null); then
+      echo "Warning: makepkg failed for $pkg." >&2
+      return 1
+    fi
+    built=$(ls -t "$dir"/*.pkg.tar.* 2>/dev/null | grep -v '\.sig$' | head -1) || built=""
+    [[ -n $built ]] || {
+      echo "Warning: no package archive was built for $pkg." >&2
+      return 1
+    }
+    built_pkgs+=("$built")
+  done
+  if ! sudo pacman -U --noconfirm --ask 4 --overwrite='*' "${built_pkgs[@]}"; then
+    echo "Warning: the dev package install failed; packaged copies are stale." >&2
+    return 1
+  fi
 }
 
 restart_live_shell() {
@@ -311,7 +395,18 @@ restart_live_shell() {
   fi
 }
 
-warn_packaged_skew
+packaged_skew
+if (( pkg_build )) && (( ${#PACKAGED_SKEW[@]} > 0 )); then
+  echo "Rebuilding the dev packages (${PACKAGED_SKEW[*]} differ from /usr/bin)..."
+  if ! rebuild_dev_packages; then
+    echo "Warning: package refresh failed; run omarchy dev pkg test omarchy $repo manually." >&2
+  fi
+fi
+packaged_skew
+if (( ${#PACKAGED_SKEW[@]} > 0 )); then
+  echo "Note: checkout and packaged copies still differ for: ${PACKAGED_SKEW[*]}"
+  echo "      pkexec runs /usr/bin; those helpers refuse to elevate until the package is refreshed."
+fi
 restart_live_shell
 
 if command -v omarchy-notification-send >/dev/null; then
