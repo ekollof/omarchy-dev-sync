@@ -11,7 +11,7 @@ If you keep several Omarchy PRs in flight, testing them one branch at a time mis
 3. Fast-forwards each PR branch from the fork (or merges the remote tip if the local branch cannot fast-forward).
 4. Checks out `$upstream/quattro` as `integration-prs` and merges every PR branch into it.
 5. Force-pushes `integration-prs` to the fork with `--force-with-lease`.
-6. Rebuilds and installs the `omarchy-settings-dev` and `omarchy-dev` packages from the rebuilt checkout when the packaged copies behind pkexec have gone stale, so helpers like `omarchy-windows-vm` keep elevating. Both packages go into a single pacman transaction (installed separately, the settings package conflicts with the installed release omarchy).
+6. Rebuilds and installs the `omarchy-settings-dev` and `omarchy-dev` packages from the rebuilt checkout when the packaged copies behind pkexec have gone stale, so helpers like `omarchy-windows-vm` keep elevating. Both packages go into a single pacman transaction (installed separately, the settings package conflicts with the installed release omarchy). The dev builds carry `epoch=1` so `dev.<sha>` sorts above official releases and `omarchy update` does not replace them.
 7. Restarts the live Omarchy shell when this checkout is the session `OMARCHY_PATH`.
 
 Known append-only conflicts in `test/shell.d/theme-staging-test.sh` (`colour_only` / `denied` arrays) are resolved as a sorted union. Anything else aborts the rebuild and restores the previous integration branch.

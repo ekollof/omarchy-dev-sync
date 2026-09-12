@@ -360,6 +360,18 @@ rebuild_dev_packages() {
       return 1
     fi
     sed -i "s/^pkgver=.*/pkgver=dev.$sha$dirty/" "$dir/PKGBUILD"
+    # Pin the dev build above any official release. Without this,
+    # dev.<sha> sorts below official versions like 4.0.3, so
+    # `omarchy update` (pacman -Syu) "upgrades" the dev package back
+    # to the release build. epoch=1 beats every epoch-less official
+    # version regardless of pkgver.
+    if grep -q '^epoch=' "$dir/PKGBUILD"; then
+      sed -i 's/^epoch=.*/epoch=1/' "$dir/PKGBUILD"
+    elif grep -q '^pkgrel=' "$dir/PKGBUILD"; then
+      sed -i 's/^pkgrel=/epoch=1\npkgrel=/' "$dir/PKGBUILD"
+    else
+      sed -i "s/^pkgver=.*/&\nepoch=1/" "$dir/PKGBUILD"
+    fi
   done
   for pkg in omarchy-settings-dev omarchy-dev; do
     dir="$build_dir/$pkg"
