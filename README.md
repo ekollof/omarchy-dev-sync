@@ -32,6 +32,19 @@ git clone https://github.com/ekollof/omarchy-dev-sync.git ~/src/omarchy-dev-sync
 ln -sf ~/src/omarchy-dev-sync/omarchy-dev-sync ~/.local/bin/omarchy-dev-sync
 ```
 
+Optional: install the `omarchy-dev` agent skill so coding agents know this
+workflow (dev-linked checkout, never edit the integration branch directly,
+verify with `./test/shell` / `./test/cli`, never post PR comments without
+approval). The skill lives in `skills/omarchy-dev/`; link it where your
+agent looks for global skills:
+
+```bash
+ln -sf ~/src/omarchy-dev-sync/skills/omarchy-dev ~/.config/opencode/skills/omarchy-dev
+# Claude Code and compatible agents also discover these locations:
+ln -sf ~/src/omarchy-dev-sync/skills/omarchy-dev ~/.claude/skills/omarchy-dev
+ln -sf ~/src/omarchy-dev-sync/skills/omarchy-dev ~/.agents/skills/omarchy-dev
+```
+
 Then from anywhere:
 
 ```bash
