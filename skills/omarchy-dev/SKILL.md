@@ -69,6 +69,12 @@ integration branch.
   conflict.
 - **Never post PR comments without explicit user approval** — draft the
   reply and confirm first.
+- Closing a PR drops it from the next integration rebuild, which is what
+  the live desktop runs. Never close a PR whose fix is load-bearing for the
+  live session until its replacement has actually merged — not when a
+  canonical alternative is merely identified (closing a working menu-plugin
+  fix in favor of a not-yet-merged competing PR emptied the live menu
+  clone's Apps list).
 
 ## Known environment quirks
 
