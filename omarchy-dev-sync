@@ -292,14 +292,16 @@ fi
 newest=$(git rev-parse --short HEAD)
 pr_count=${#merge_refs[@]}
 
-# Helpers that fail closed when the checkout and the packaged copy differ,
-# i.e. exactly the ones that refuse to elevate on a stale package.
+# Every helper the packages ship must match the checkout: migrations and
+# privileged entrypoints call the packaged copies under /usr/bin, so any drift
+# there breaks the update even for helpers without an explicit staleness guard.
+# (The dev and settings-dev rebuild below covers both packages, so no name
+# needs excluding; helpers with no packaged copy yet cannot be stale.)
 packaged_skew() {
   PACKAGED_SKEW=()
   local cmd pkg
   for cmd in "$repo"/bin/omarchy-*; do
     [[ -f $cmd ]] || continue
-    grep -q 'privileged_copy_matches' "$cmd" 2>/dev/null || continue
     pkg=/usr/bin/${cmd##*/}
     [[ -f $pkg ]] || continue
     cmp -s "$cmd" "$pkg" && continue
@@ -407,14 +409,14 @@ restart_live_shell() {
   fi
 }
 
-packaged_skew
+packaged_skew || true
 if (( pkg_build )) && (( ${#PACKAGED_SKEW[@]} > 0 )); then
   echo "Rebuilding the dev packages (${PACKAGED_SKEW[*]} differ from /usr/bin)..."
   if ! rebuild_dev_packages; then
     echo "Warning: package refresh failed; run omarchy dev pkg test omarchy $repo manually." >&2
   fi
 fi
-packaged_skew
+packaged_skew || true
 if (( ${#PACKAGED_SKEW[@]} > 0 )); then
   echo "Note: checkout and packaged copies still differ for: ${PACKAGED_SKEW[*]}"
   echo "      pkexec runs /usr/bin; those helpers refuse to elevate until the package is refreshed."
