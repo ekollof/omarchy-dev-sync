@@ -88,3 +88,8 @@ integration branch.
   `test/shell.d/runtime-smoke-test.sh` IPC-handler count with multi-screen
   setups). If a failure looks unrelated, verify it fails without your change
   too before chasing it.
+- Never install helpers into `/usr/lib/systemd/system-sleep/` (or anywhere
+  outside the repo and home) without timeout guards: a prior agent session
+  put an unbinding hook there that wedged in D-state and deadlocked every
+  suspend. Sleep hooks must fail open (`timeout`, tolerate errors), never
+  block the transaction.
