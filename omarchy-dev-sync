@@ -2,7 +2,9 @@
 
 # Sync an Omarchy checkout with upstream and rebuild an integration branch
 # from your open PRs, so an `omarchy dev link` environment tests every
-# PR patch together.
+# PR patch together. Open omarchy-pkgs PRs of yours are merged into a
+# disposable worktree for the package rebuild, so packaging fixes ship in
+# the same sync that tests them.
 
 set -euo pipefail
 
@@ -14,6 +16,8 @@ head=quattro
 integration=integration-prs
 restart=1
 pkg_build=1
+pkgs_repo=$HOME/Work/omarchy/omarchy-pkgs
+pkgs_prs=1
 
 if [[ -f $config_dir/config ]]; then
   # shellcheck disable=SC1091
@@ -27,14 +31,18 @@ head=${OMARCHY_DEV_SYNC_HEAD:-$head}
 integration=${OMARCHY_DEV_SYNC_INTEGRATION:-$integration}
 restart=${OMARCHY_DEV_SYNC_RESTART:-$restart}
 pkg_build=${OMARCHY_DEV_SYNC_PKG:-$pkg_build}
+pkgs_repo=${OMARCHY_DEV_SYNC_PKGS_REPO:-$pkgs_repo}
+pkgs_prs=${OMARCHY_DEV_SYNC_PKGS_PRS:-$pkgs_prs}
 
 usage() {
   cat <<USAGE
 Usage: omarchy-dev-sync [--no-restart] [--no-pkg]
 
-Fetch $upstream/$head and rebuild $integration by merging every open PR
+  Fetch $upstream/$head and rebuild $integration by merging every open PR
 of yours (plus optional extra branches) so an omarchy-dev-link checkout
-runs them together.
+runs them together. When the dev packages are rebuilt, your open
+omarchy-pkgs PRs are merged into a disposable worktree first, so the
+packages under test include your packaging fixes.
 
   --no-restart  Do not restart the live Omarchy shell after a successful rebuild.
   --no-pkg      Do not rebuild and install the dev packages after a successful
@@ -51,6 +59,11 @@ Environment overrides the config file:
   OMARCHY_DEV_SYNC_HEAD          Upstream branch (default: $head)
   OMARCHY_DEV_SYNC_INTEGRATION   Integration branch (default: $integration)
   OMARCHY_DEV_SYNC_PKG           Rebuild+install dev packages (default: 1)
+  OMARCHY_DEV_SYNC_PKGS_REPO     omarchy-pkgs checkout (default: $pkgs_repo)
+  OMARCHY_DEV_SYNC_PKGS_PRS      Merge your open omarchy-pkgs PRs for the
+                                 package build (default: 1)
+  OMARCHY_PKGBUILDS_DIR          Use these PKGBUILDs as-is, skipping the
+                                 omarchy-pkgs PR merge
   OMARCHY_DEV_SYNC_CONFIG        Config directory (default: $config_dir)
 USAGE
 }
@@ -308,6 +321,85 @@ packaged_skew() {
   (( ${#PACKAGED_SKEW[@]} > 0 ))
 }
 
+# Build the dev packages from a disposable worktree of the pkgs checkout
+# with your open omarchy-pkgs PRs merged, so packaging fixes ship in the
+# same sync that tests them. The checkout itself is never touched and
+# nothing is pushed: the worktree is removed after the build. Any failure
+# (unreachable API, merge conflict) falls back to the plain checkout with
+# a warning, which is today's behavior.
+pkgs_worktree=""
+pkgs_pkgbuilds_dir=""
+cleanup_pkgs_worktree() {
+  if [[ -n $pkgs_worktree && -d $pkgs_worktree ]]; then
+    git -C "$pkgs_repo" worktree remove --force "$pkgs_worktree" 2>/dev/null || true
+  fi
+  pkgs_worktree=""
+}
+prepare_pkgs_build_dir() {
+  local slug pkgs_slug_url base pr_numbers n
+  pkgs_pkgbuilds_dir=${OMARCHY_PKGBUILDS_DIR:-$pkgs_repo/pkgbuilds}
+  if [[ -n ${OMARCHY_PKGBUILDS_DIR:-} ]]; then
+    echo "Using OMARCHY_PKGBUILDS_DIR as-is; open omarchy-pkgs PRs will not be merged."
+    return 0
+  fi
+  (( pkgs_prs )) || return 0
+  if [[ ! -d $pkgs_repo/.git ]]; then
+    return 0
+  fi
+  # PR heads may live on any fork, so fetch them through the upstream's
+  # pull refs instead of tracking branches per fork.
+  if ! git -C "$pkgs_repo" fetch --quiet origin --prune 2>/dev/null; then
+    echo "Warning: could not fetch omarchy-pkgs; building from the checkout as-is." >&2
+    return 0
+  fi
+  git -C "$pkgs_repo" worktree prune 2>/dev/null || true
+  pkgs_slug_url=$(git -C "$pkgs_repo" remote get-url origin 2>/dev/null) || pkgs_slug_url=""
+  slug=${pkgs_slug_url#*github.com[:/]}
+  slug=${slug%.git}
+  base=$(git -C "$pkgs_repo" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || base=""
+  if [[ -z $slug || -z $base ]]; then
+    echo "Warning: could not resolve the omarchy-pkgs upstream; building from the checkout as-is." >&2
+    return 0
+  fi
+  if ! pr_numbers=$(gh pr list --repo "$slug" --author @me --state open --json number --jq '.[].number' 2>/dev/null); then
+    echo "Warning: gh pr list failed for $slug; building from the checkout as-is." >&2
+    return 0
+  fi
+  pr_numbers=$(printf '%s\n' "$pr_numbers" | sort -n | tr '\n' ' ')
+  if [[ -z ${pr_numbers// /} ]]; then
+    return 0
+  fi
+  pkgs_worktree=$(mktemp -d -t omarchy-dev-sync-pkgs.XXXXXX) || return 0
+  trap cleanup_pkgs_worktree EXIT
+  if ! git -C "$pkgs_repo" worktree add --detach --quiet "$pkgs_worktree" "$base" 2>/dev/null; then
+    echo "Warning: could not create the omarchy-pkgs worktree; building from the checkout as-is." >&2
+    cleanup_pkgs_worktree
+    trap - EXIT
+    return 0
+  fi
+  echo "Merging open omarchy-pkgs PRs for the package build:$pr_numbers"
+  for n in $pr_numbers; do
+    if ! git -C "$pkgs_worktree" fetch --quiet origin "pull/$n/head" 2>/dev/null; then
+      echo "Warning: could not fetch omarchy-pkgs PR #$n; building from the checkout as-is." >&2
+      git -C "$pkgs_worktree" reset --quiet --hard "$base"
+      return 0
+    fi
+    if ! git -C "$pkgs_worktree" merge --quiet --no-edit FETCH_HEAD 2>/dev/null; then
+      echo "Warning: merge conflict in omarchy-pkgs PR #$n; building from the checkout as-is." >&2
+      git -C "$pkgs_worktree" merge --abort 2>/dev/null || true
+      git -C "$pkgs_worktree" reset --quiet --hard "$base"
+      return 0
+    fi
+  done
+  if [[ ! -f $pkgs_worktree/pkgbuilds/omarchy-dev/PKGBUILD ]]; then
+    echo "Warning: merged omarchy-pkgs tree has no PKGBUILDs; building from the checkout as-is." >&2
+    cleanup_pkgs_worktree
+    trap - EXIT
+    return 0
+  fi
+  pkgs_pkgbuilds_dir=$pkgs_worktree/pkgbuilds
+}
+
 # Rebuild and install the dev packages from the rebuilt checkout, so the
 # packaged copies pkexec runs match the integration tree. The settings and
 # main dev packages replace their release counterparts and depend on each
@@ -318,7 +410,8 @@ packaged_skew() {
 rebuild_dev_packages() {
   local pkgbuilds_dir build_dir sha dirty pkg dir built
   local -a built_pkgs=()
-  pkgbuilds_dir=${OMARCHY_PKGBUILDS_DIR:-$HOME/Work/omarchy/omarchy-pkgs/pkgbuilds}
+  prepare_pkgs_build_dir
+  pkgbuilds_dir=$pkgs_pkgbuilds_dir
   if [[ ! -f $pkgbuilds_dir/omarchy-dev/PKGBUILD ]]; then
     echo "Note: no omarchy-pkgs checkout at $pkgbuilds_dir; leaving the installed package stale."
     echo "      Clone omacom/omarchy-pkgs there (or point OMARCHY_PKGBUILDS_DIR at one) to automate this."
