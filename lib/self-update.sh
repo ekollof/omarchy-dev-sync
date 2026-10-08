@@ -1,12 +1,13 @@
 #!/bin/bash
 
-# Symlinks follow Git automatically; refresh installed copies with a backup.
+# Install missing skills as links; refresh installed copies with a backup.
 refresh_local_dev_skills() {
   local source=$1 destination parent staging backup
   local skill_home=${2:-$HOME}
   local skill_config=${3:-${XDG_CONFIG_HOME:-$HOME/.config}}
   local skill_codex=${4:-${CODEX_HOME:-$HOME/.codex}}
   [[ -f $source/SKILL.md ]] || return 0
+  source=$(readlink -f "$source")
   local -a destinations=(
     "$skill_home/.agents/skills/omarchy-dev"
     "$skill_home/.claude/skills/omarchy-dev"
@@ -14,15 +15,24 @@ refresh_local_dev_skills() {
     "$skill_codex/skills/omarchy-dev"
   )
   for destination in "${destinations[@]}"; do
+    parent=${destination%/*}
+    if [[ ! -e $destination && ! -L $destination ]]; then
+      mkdir -p "$parent" || return 1
+      ln -s "$source" "$destination" || return 1
+      echo "Installed local omarchy-dev skill: $destination"
+      continue
+    fi
     if [[ -L $destination ]]; then
       if [[ $(readlink -f "$destination") != "$(readlink -f "$source")" ]]; then
         echo "Warning: leaving unrelated skill symlink unchanged: $destination" >&2
       fi
       continue
     fi
-    [[ -d $destination && -f $destination/SKILL.md ]] || continue
+    if [[ ! -d $destination ]]; then
+      echo "Warning: leaving conflicting skill path unchanged: $destination" >&2
+      continue
+    fi
     diff -qr "$source" "$destination" >/dev/null && continue
-    parent=${destination%/*}
     staging=$(mktemp -d "$parent/.omarchy-dev-update.XXXXXX") || return 1
     if ! cp -a "$source/." "$staging/"; then
       rm -rf "$staging"

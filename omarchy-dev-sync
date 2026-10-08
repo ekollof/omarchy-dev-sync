@@ -120,8 +120,8 @@ done
 
 if [[ $self_update == 1 ]]; then
   self_update_checkout "$script_dir" "$script_dir/omarchy-dev-sync" "${original_args[@]}"
-  refresh_local_dev_skills "$script_dir/skills/omarchy-dev"
 fi
+refresh_local_dev_skills "$script_dir/skills/omarchy-dev"
 unset OMARCHY_DEV_SYNC_SELF_UPDATED
 
 if [[ ! -d $repo/.git ]]; then

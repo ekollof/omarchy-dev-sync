@@ -99,9 +99,16 @@ printf '<%s>\\n' "$@"
     config.mkdir()
     env.update(OMARCHY_DEV_SYNC_CONFIG=str(config), OMARCHY_DEV_SYNC_REPO=str(temp / 'absent'))
     actual = str(root / 'omarchy-dev-sync')
+    missing_skills = (temp / 'home/.claude/skills/omarchy-dev', temp / 'config-home/opencode/skills/omarchy-dev', temp / 'codex-home/skills/omarchy-dev')
+    for path in missing_skills:
+        path.unlink()
+    run('bash', actual, '--help', env=env)
+    assert all(not path.exists() for path in missing_skills)
     result = subprocess.run(['bash', actual, '--no-self-update', '--no-pkg'], env=env, capture_output=True, text=True)
     assert result.returncode == 1 and 'not a git repo' in result.stderr
     assert 'Checking omarchy-dev-sync' not in result.stdout
+    for path in missing_skills:
+        assert path.is_symlink() and (path / 'SKILL.md').is_file()
     assert 'Checking omarchy-dev-sync' not in run('bash', actual, '--help', env=env)
     for setting in ('config', 'environment'):
         if setting == 'config':

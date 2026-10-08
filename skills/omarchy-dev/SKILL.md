@@ -51,7 +51,7 @@ integration branch.
 3. Push the PR branch (use `--force-with-lease` if local history was
    rewritten; these are personal fork branches).
 4. The script checks its own remote tracking branch first, fast-forwards a clean checkout, and restarts with the original arguments when updated. Local changes or ahead/diverged history are preserved; fetch failures warn and continue. Use `--no-self-update`, config `self_update=0`, or `OMARCHY_DEV_SYNC_SELF_UPDATE=0` to opt out.
-   Startup refreshes existing copied omarchy-dev skills in standard Agents, Claude, OpenCode and Codex skill directories, backing up changed copies. Symlinks into this checkout already follow updates; unrelated symlinks and missing installations are preserved. Self-update opt-outs also skip skill refresh.
+   Startup installs missing omarchy-dev skills as symlinks in standard Agents, Claude, OpenCode and Codex skill directories, creating parents as needed. Existing copied skills refresh with backups; symlinks into this checkout follow updates, and unrelated symlinks are preserved. This runs even with self-update disabled; --help does not install skills.
    Before restarting, the persistent dev link is checked against the synced repo. Known Omarchy stable/rc package and Arch mirror URLs are aligned with edge with backups, retaining custom config. No package databases or system packages are updated by this check; run omarchy update afterwards. It also runs with --no-pkg; opt out with --no-package-sources, package_sources=0, or OMARCHY_DEV_SYNC_PACKAGE_SOURCES=0.
    Run `omarchy-dev-sync` from anywhere to rebuild and push the integration
    branch, refresh stale dev packages, and restart the live shell. It ends

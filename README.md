@@ -40,11 +40,11 @@ git clone https://github.com/ekollof/omarchy-dev-sync.git ~/src/omarchy-dev-sync
 ln -sf ~/src/omarchy-dev-sync/omarchy-dev-sync ~/.local/bin/omarchy-dev-sync
 ```
 
-Optional: install the `omarchy-dev` agent skill so coding agents know this
+The script installs the `omarchy-dev` agent skill on its first run so coding agents know this
 workflow (dev-linked checkout, never edit the integration branch directly,
 verify with `./test/shell` / `./test/cli`, never post PR comments without
 approval). The skill lives in `skills/omarchy-dev/`; link it where your
-agent looks for global skills:
+agent looks for global skills. To install it before the first run, link it manually:
 
 ```bash
 ln -sf ~/src/omarchy-dev-sync/skills/omarchy-dev ~/.config/opencode/skills/omarchy-dev
@@ -53,7 +53,7 @@ ln -sf ~/src/omarchy-dev-sync/skills/omarchy-dev ~/.claude/skills/omarchy-dev
 ln -sf ~/src/omarchy-dev-sync/skills/omarchy-dev ~/.agents/skills/omarchy-dev
 ```
 
-Startup also refreshes existing copied `omarchy-dev` installations in `~/.agents/skills`, `~/.claude/skills`, `${XDG_CONFIG_HOME:-~/.config}/opencode/skills`, and `${CODEX_HOME:-~/.codex}/skills`. Changed copies are replaced with the bundled skill directory, with the previous directory retained as `omarchy-dev.bak.*`. Unchanged copies are skipped, symlinks into this checkout update automatically, and symlinks elsewhere are preserved with a warning. Missing installations are not created. This also catches manual Git pulls; `--no-self-update` or `self_update=0` skips skill refresh.
+Startup installs missing `omarchy-dev` skills in `~/.agents/skills`, `~/.claude/skills`, `${XDG_CONFIG_HOME:-~/.config}/opencode/skills`, and `${CODEX_HOME:-~/.codex}/skills` as symlinks to the bundled skill, creating parent directories as needed. Existing changed copies are replaced with the bundled skill directory, with the previous directory retained as `omarchy-dev.bak.*`. Unchanged copies are skipped; symlinks into this checkout update automatically, and symlinks elsewhere are preserved with a warning. Skill installation and refresh also run after manual Git pulls and with `--no-self-update` or `self_update=0`; `--help` does not install anything.
 
 Then from anywhere:
 
