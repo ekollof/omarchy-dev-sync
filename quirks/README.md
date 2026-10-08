@@ -13,6 +13,6 @@ The dispatcher receives `phase`, checkout path and fetched source base ref. Exit
 
 Every new quirk needs focused tests demonstrating activation, no-op/retirement conditions, and refusal to resolve unrelated changes.
 
-`qt612-shell-color`: activates for Qt 6.12+ with the old palette on the fetched base. Selects PR14511, resolves only a pure incoming palette-reference rename, and migrates unqualified palette references in user plugin QML with backups. PR selection retires automatically once the fetched base ships ShellColor; migration becomes a no-op after plugin updates. Remove this directory once supported source/plugin versions no longer need compatibility.
+`qt612-shell-color`: activates for Qt 6.12+ with the old palette on the fetched base. Selects PR14511 until upstream ships ShellColor or the qualified Commons.Color replacement. The `retired-prs` hook suppresses the obsolete rename PR even in extra-prs once upstream qualifies its palette. Resolves only verified mechanical palette changes, preserving feature behavior through a three-way merge. Migrates user plugin palette references with backups, including previous ShellColor migrations back to upstream Commons.Color. Remove this directory once supported source/plugin versions no longer need compatibility.
 
 `dev-package-version`: resolves only independent upstream pkgver and PR pkgrel increases in the two dev PKGBUILDs, requiring all other content to merge cleanly. Inactive on clean merges; remove once stale packaging branches no longer require this compatibility.

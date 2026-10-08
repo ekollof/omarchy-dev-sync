@@ -240,10 +240,19 @@ while IFS= read -r number; do
   [[ -n $number ]] && extra_prs+=("$number")
 done <<<"$quirk_prs"
 declare -A selected_pr_seen=()
+declare -A retired_pr_seen=()
+retired_prs=$(run_quirks retired-prs "$repo")
+while IFS= read -r number; do
+  [[ -n $number ]] && retired_pr_seen[$number]=1
+done <<<"$retired_prs"
 for number in "${extra_prs[@]}"; do
   if [[ ! $number =~ ^[1-9][0-9]*$ ]]; then
     echo "Error: invalid upstream PR number in extra-prs: $number" >&2
     exit 1
+  fi
+  if [[ -n ${retired_pr_seen[$number]+x} ]]; then
+    echo "Skipping obsolete compatibility PR #$number: upstream now provides its replacement." >&2
+    continue
   fi
   [[ -z ${selected_pr_seen[$number]+x} ]] || continue
   selected_pr_seen[$number]=1

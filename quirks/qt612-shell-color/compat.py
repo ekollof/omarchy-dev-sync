@@ -21,6 +21,24 @@ def resolve(repo):
             return False
         base, ours, theirs = (git(repo, 'show', f':{stage}:{file}') for stage in (1, 2, 3))
         renamed = re.sub(r'\bColor\.', 'ShellColor.', base)
+        qualified = re.sub(r'(?<![\w.])Color\.', 'Commons.Color.', base)
+        qualified = qualified.replace('import qs.Commons\n', 'import qs.Commons\nimport qs.Commons as Commons\n')
+        if ours == qualified and ours != base:
+            # Upstream qualified the palette; normalize only that mechanical
+            # change before a real three-way merge of the feature branch.
+            normalized_ours = base
+            normalized_theirs = re.sub(r'(?<![\w.])Commons\.Color\.', 'Color.', theirs)
+            normalized_theirs = normalized_theirs.replace('import qs.Commons as Commons\n', '')
+            with tempfile.TemporaryDirectory() as directory:
+                paths = [Path(directory) / str(i) for i in range(3)]
+                for path, content in zip(paths, (normalized_ours, base, normalized_theirs)):
+                    path.write_text(content)
+                merged = subprocess.run(['git', 'merge-file', '-p', *map(str, paths)], capture_output=True, text=True)
+            if merged.returncode:
+                return False
+            content = re.sub(r'(?<![\w.])Color\.', 'Commons.Color.', merged.stdout)
+            replacements[file] = content.replace('import qs.Commons\n', 'import qs.Commons\nimport qs.Commons as Commons\n')
+            continue
         if renamed == base or theirs != renamed:
             return False
         # Incoming changes must be exactly the palette rename. Retain every
@@ -36,6 +54,9 @@ def resolve(repo):
 
 def migrate(repo, plugins):
     palette = repo / 'shell/Commons/ShellColor.qml'
+    qualified = not palette.is_file()
+    if qualified:
+        palette = repo / 'shell/Commons/Color.qml'
     if not palette.is_file() or not plugins.is_dir():
         return
     # Match only members actually exposed by this shell palette, and files
@@ -43,7 +64,7 @@ def migrate(repo, plugins):
     members = re.findall(r'^  (?:readonly )?property \w+ (\w+)\s*:', palette.read_text(), re.MULTILINE)
     if not members:
         return
-    pattern = re.compile(r'(?<![\w.])Color\.(' + '|'.join(map(re.escape, members)) + r')\b')
+    pattern = re.compile(r'(?<![\w.])' + ('(?:ShellColor|Color)' if qualified else 'Color') + r'\.(' + '|'.join(map(re.escape, members)) + r')\b')
     for plugin in sorted(plugins.iterdir()):
         if plugin.is_symlink() or not plugin.is_dir() or (plugin / 'Color.qml').exists():
             continue
@@ -53,9 +74,11 @@ def migrate(repo, plugins):
             original = file.read_text()
             if not re.search(r'^import qs\.Commons(?:\s+\d+(?:\.\d+)?)?[ \t]*(?://[^\n]*)?$', original, re.MULTILINE):
                 continue
-            updated = pattern.sub(r'ShellColor.\1', original)
+            updated = pattern.sub(r'Commons.Color.\1' if qualified else r'ShellColor.\1', original)
             if updated == original:
                 continue
+            if qualified and not re.search(r'^import qs\.Commons as Commons\s*$', updated, re.MULTILINE):
+                updated = re.sub(r'^(import qs\.Commons(?:\s+\d+(?:\.\d+)?)?[ \t]*(?://[^\n]*)?)$', r'\1\nimport qs.Commons as Commons', updated, count=1, flags=re.MULTILINE)
             fd, backup = tempfile.mkstemp(prefix=file.name + '.bak.dev-sync-color.', dir=file.parent)
             os.close(fd)
             shutil.copy2(file, backup)

@@ -14,7 +14,8 @@ spec.loader.exec_module(compat)
 def git(repo, *args):
     return subprocess.check_output(['git', '-C', str(repo), *args], text=True, stderr=subprocess.DEVNULL)
 
-for pure in (True, False):
+for mode in ('rename', 'qualified'):
+ for pure in (True, False):
     with tempfile.TemporaryDirectory() as directory:
         repo = Path(directory)
         git(repo, 'init', '-q', '-b', 'master')
@@ -28,19 +29,21 @@ for pure in (True, False):
         git(repo, 'add', '.')
         git(repo, 'commit', '-qm', 'base')
         git(repo, 'switch', '-qc', 'rename')
-        incoming = base.replace('Color.', 'ShellColor.')
+        incoming = base.replace('Color.', 'ShellColor.') if mode == 'rename' else base.replace('default', 'user font')
         if not pure:
             incoming = incoming.replace('default', 'incoming')
         file.write_text(incoming)
         git(repo, 'commit', '-qam', 'rename')
         git(repo, 'switch', '-q', 'master')
-        file.write_text(base.replace('default', 'user font'))
+        file.write_text(base.replace('default', 'user font') if mode == 'rename' else base.replace('Color.', 'Commons.Color.').replace('import qs.Commons\n', 'import qs.Commons\nimport qs.Commons as Commons\n'))
+        if mode == 'qualified' and not pure:
+            file.write_text(file.read_text().replace('default', 'ours'))
         git(repo, 'commit', '-qam', 'font configuration')
         assert subprocess.run(['git', '-C', str(repo), 'merge', '--no-edit', 'rename'], capture_output=True).returncode
         before = file.read_text()
         assert compat.resolve(repo) == pure
         if pure:
-            assert 'ShellColor.foreground' in file.read_text() and 'user font' in file.read_text()
+            assert ('ShellColor.foreground' if mode == 'rename' else 'Commons.Color.foreground') in file.read_text() and 'user font' in file.read_text()
             assert not git(repo, 'diff', '--name-only', '--diff-filter=U')
         else:
             assert file.read_text() == before and git(repo, 'diff', '--name-only', '--diff-filter=U')
@@ -69,3 +72,11 @@ with tempfile.TemporaryDirectory() as directory:
     compat.migrate(repo, plugins)
     assert len(list(file.parent.glob('Panel.qml.bak.*'))) == 1
     print('ok - only shell palette references migrated; backup/idempotence; Qt colors, aliases and symlinks preserved')
+    palette.rename(palette.with_name('Color.qml'))
+    compat.migrate(repo, plugins)
+    assert 'Commons.Color.foreground' in file.read_text()
+    assert 'import qs.Commons as Commons' in file.read_text()
+    assert 'ShellColor.' not in file.read_text()
+    compat.migrate(repo, plugins)
+    assert len(list(file.parent.glob('Panel.qml.bak.*'))) == 2
+    print('ok - previously renamed plugin palettes migrate to upstream qualification with backups')
