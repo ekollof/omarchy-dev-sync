@@ -21,7 +21,7 @@ integration branch.
 - Sync script: `omarchy-dev-sync` (this repo's `omarchy-dev-sync`
   executable, typically symlinked onto PATH as `omarchy-dev-sync`).
   Config lives in `~/.config/omarchy-dev-sync/config`
-  (`repo`, `upstream`, `fork`, `head`, `integration`, `pkgs_repo`,
+  (`repo`, `upstream`, `fork`, `head`, `integration`, `self_update`, `pkgs_repo`,
   `pkgs_prs`, `runtime_packages`) and optional `extra-branches` / `extra-prs` (override the directory with
   `OMARCHY_DEV_SYNC_CONFIG`; environment variables win over the file).
   Defaults: `repo=~/src/omarchy`, `upstream=origin`, `fork=fork`,
@@ -50,7 +50,8 @@ integration branch.
    matching `test(bar): ...` commit, following the branch's existing style).
 3. Push the PR branch (use `--force-with-lease` if local history was
    rewritten; these are personal fork branches).
-4. Run `omarchy-dev-sync` from anywhere to rebuild and push the integration
+4. The script checks its own remote tracking branch first, fast-forwards a clean checkout, and restarts with the original arguments when updated. Local changes or ahead/diverged history are preserved; fetch failures warn and continue. Use `--no-self-update`, config `self_update=0`, or `OMARCHY_DEV_SYNC_SELF_UPDATE=0` to opt out.
+   Run `omarchy-dev-sync` from anywhere to rebuild and push the integration
    branch, refresh stale dev packages, and restart the live shell. It ends
    back on the integration branch. Flags: `--no-restart` skips the shell
    restart, `--no-pkg` skips the package rebuild. The package refresh

@@ -6,6 +6,8 @@ If you keep several Omarchy PRs in flight, testing them one branch at a time mis
 
 ## What it does
 
+Before syncing, it checks its own Git tracking branch and fast-forwards a clean checkout to the latest commit, then restarts with the original arguments. Local changes, detached HEAD, missing tracking branches, ahead/diverged history, or fetch failures leave the existing version running with a warning. Copies outside a Git checkout run without self-updating. `--help` never fetches. Use `--no-self-update`, `self_update=0` in the config, or `OMARCHY_DEV_SYNC_SELF_UPDATE=0` to disable it.
+
 1. Fetches the upstream remote (`origin`) and your fork (`fork`).
 2. Lists **your** open PRs against that upstream with `gh`.
 3. Fast-forwards each PR branch from the fork (or merges the remote tip if the local branch cannot fast-forward).
@@ -70,6 +72,7 @@ integration=integration-prs
 pkgs_repo=$HOME/Work/omarchy/omarchy-pkgs
 pkgs_prs=1
 runtime_packages="quickshell"
+self_update=1
 ```
 
 | File / variable | Default | Meaning |
@@ -89,6 +92,7 @@ For a reviewed PR by another author, put its upstream PR number in `extra-prs` (
 ## Validation
 
 ```bash
+python3 tests/self-update-test.py
 bash tests/package-state-test.sh
 python3 tests/sync-runtime-test.py
 ```
