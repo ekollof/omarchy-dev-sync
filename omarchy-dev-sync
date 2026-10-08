@@ -8,6 +8,10 @@
 
 set -euo pipefail
 
+script_dir=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+source "$script_dir/lib/package-state.sh"
+package_state_dir=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-dev-sync/packages
+
 config_dir=${OMARCHY_DEV_SYNC_CONFIG:-"$HOME/.config/omarchy-dev-sync"}
 repo=$HOME/src/omarchy
 upstream=origin
@@ -18,6 +22,7 @@ restart=1
 pkg_build=1
 pkgs_repo=$HOME/Work/omarchy/omarchy-pkgs
 pkgs_prs=1
+runtime_packages="quickshell"
 
 if [[ -f $config_dir/config ]]; then
   # shellcheck disable=SC1091
@@ -33,6 +38,7 @@ restart=${OMARCHY_DEV_SYNC_RESTART:-$restart}
 pkg_build=${OMARCHY_DEV_SYNC_PKG:-$pkg_build}
 pkgs_repo=${OMARCHY_DEV_SYNC_PKGS_REPO:-$pkgs_repo}
 pkgs_prs=${OMARCHY_DEV_SYNC_PKGS_PRS:-$pkgs_prs}
+runtime_packages=${OMARCHY_DEV_SYNC_RUNTIME_PACKAGES-$runtime_packages}
 
 usage() {
   cat <<USAGE
@@ -51,6 +57,7 @@ packages under test include your packaging fixes.
 Config (bash assignments, then extra-branches):
   $config_dir/config
   $config_dir/extra-branches
+  $config_dir/extra-prs (upstream PR numbers, including other authors)
 
 Environment overrides the config file:
   OMARCHY_DEV_SYNC_REPO          Omarchy checkout (default: $repo)
@@ -62,6 +69,8 @@ Environment overrides the config file:
   OMARCHY_DEV_SYNC_PKGS_REPO     omarchy-pkgs checkout (default: $pkgs_repo)
   OMARCHY_DEV_SYNC_PKGS_PRS      Merge your open omarchy-pkgs PRs for the
                                  package build (default: 1)
+  OMARCHY_DEV_SYNC_RUNTIME_PACKAGES  Installed runtime packages to refresh
+                                 (default: quickshell; empty disables)
   OMARCHY_PKGBUILDS_DIR          Use these PKGBUILDs as-is, skipping the
                                  omarchy-pkgs PR merge
   OMARCHY_DEV_SYNC_CONFIG        Config directory (default: $config_dir)
@@ -192,6 +201,25 @@ for branch in "${pr_branches[@]}" "${extra_branches[@]}"; do
   fi
 done
 
+# Include an explicitly selected upstream PR without duplicating its review.
+extra_prs=()
+if [[ -f $config_dir/extra-prs ]]; then
+  mapfile -t extra_prs < <(sed -E 's/#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//; /^$/d' "$config_dir/extra-prs")
+fi
+for number in "${extra_prs[@]}"; do
+  if [[ ! $number =~ ^[1-9][0-9]*$ ]]; then
+    echo "Error: invalid upstream PR number in extra-prs: $number" >&2
+    exit 1
+  fi
+  ref="refs/remotes/$upstream/pull/$number"
+  if ! git fetch --quiet "$upstream" "+pull/$number/head:$ref"; then
+    echo "Error: could not fetch selected PR #$number; leaving $integration alone." >&2
+    exit 1
+  fi
+  merge_refs+=("$ref")
+  pr_labels+=("selected #$number")
+done
+
 if (( ${#merge_refs[@]} > 0 )); then
   mapfile -t merge_refs < <(printf '%s\n' "${merge_refs[@]}" | sort -u)
 fi
@@ -318,15 +346,15 @@ packaged_skew() {
     cmp -s "$cmd" "$pkg" && continue
     PACKAGED_SKEW+=("${cmd##*/}")
   done
-  (( ${#PACKAGED_SKEW[@]} > 0 ))
+  return 0
 }
 
 # Build the dev packages from a disposable worktree of the pkgs checkout
 # with your open omarchy-pkgs PRs merged, so packaging fixes ship in the
 # same sync that tests them. The checkout itself is never touched and
-# nothing is pushed: the worktree is removed after the build. Any failure
-# (unreachable API, merge conflict) falls back to the plain checkout with
-# a warning, which is today's behavior.
+# nothing is pushed: the worktree is removed after the build. Fetch or
+# unresolved merge failures stop the package refresh instead of dropping PRs.
+# Git rerere may reuse a conflict resolution previously verified by hand.
 pkgs_worktree=""
 pkgs_pkgbuilds_dir=""
 cleanup_pkgs_worktree() {
@@ -336,7 +364,7 @@ cleanup_pkgs_worktree() {
   pkgs_worktree=""
 }
 prepare_pkgs_build_dir() {
-  local slug pkgs_slug_url base pr_numbers n
+  local slug pkgs_slug_url base pr_numbers n conflicted merge_output
   pkgs_pkgbuilds_dir=${OMARCHY_PKGBUILDS_DIR:-$pkgs_repo/pkgbuilds}
   if [[ -n ${OMARCHY_PKGBUILDS_DIR:-} ]]; then
     echo "Using OMARCHY_PKGBUILDS_DIR as-is; open omarchy-pkgs PRs will not be merged."
@@ -349,8 +377,8 @@ prepare_pkgs_build_dir() {
   # PR heads may live on any fork, so fetch them through the upstream's
   # pull refs instead of tracking branches per fork.
   if ! git -C "$pkgs_repo" fetch --quiet origin --prune 2>/dev/null; then
-    echo "Warning: could not fetch omarchy-pkgs; building from the checkout as-is." >&2
-    return 0
+    echo "Error: could not fetch omarchy-pkgs; refusing to omit packaging patches." >&2
+    return 1
   fi
   git -C "$pkgs_repo" worktree prune 2>/dev/null || true
   pkgs_slug_url=$(git -C "$pkgs_repo" remote get-url origin 2>/dev/null) || pkgs_slug_url=""
@@ -358,44 +386,49 @@ prepare_pkgs_build_dir() {
   slug=${slug%.git}
   base=$(git -C "$pkgs_repo" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || base=""
   if [[ -z $slug || -z $base ]]; then
-    echo "Warning: could not resolve the omarchy-pkgs upstream; building from the checkout as-is." >&2
-    return 0
+    echo "Error: could not resolve the omarchy-pkgs upstream." >&2
+    return 1
   fi
   if ! pr_numbers=$(gh pr list --repo "$slug" --author @me --state open --json number --jq '.[].number' 2>/dev/null); then
-    echo "Warning: gh pr list failed for $slug; building from the checkout as-is." >&2
-    return 0
+    echo "Error: gh pr list failed for $slug; refusing to omit packaging patches." >&2
+    return 1
   fi
   pr_numbers=$(printf '%s\n' "$pr_numbers" | sort -n | tr '\n' ' ')
-  if [[ -z ${pr_numbers// /} ]]; then
-    return 0
-  fi
-  pkgs_worktree=$(mktemp -d -t omarchy-dev-sync-pkgs.XXXXXX) || return 0
+  pkgs_worktree=$(mktemp -d -t omarchy-dev-sync-pkgs.XXXXXX) || return 1
   trap cleanup_pkgs_worktree EXIT
   if ! git -C "$pkgs_repo" worktree add --detach --quiet "$pkgs_worktree" "$base" 2>/dev/null; then
-    echo "Warning: could not create the omarchy-pkgs worktree; building from the checkout as-is." >&2
+    echo "Error: could not create the omarchy-pkgs worktree." >&2
     cleanup_pkgs_worktree
     trap - EXIT
-    return 0
+    return 1
   fi
-  echo "Merging open omarchy-pkgs PRs for the package build:$pr_numbers"
+  if [[ -n ${pr_numbers// /} ]]; then
+    echo "Merging open omarchy-pkgs PRs for the package build:$pr_numbers"
+  else
+    echo "Using current $base packaging recipes (no open packaging PRs)."
+  fi
   for n in $pr_numbers; do
     if ! git -C "$pkgs_worktree" fetch --quiet origin "pull/$n/head" 2>/dev/null; then
-      echo "Warning: could not fetch omarchy-pkgs PR #$n; building from the checkout as-is." >&2
-      git -C "$pkgs_worktree" reset --quiet --hard "$base"
-      return 0
+      echo "Error: could not fetch omarchy-pkgs PR #$n; refusing to omit it." >&2
+      return 1
     fi
-    if ! git -C "$pkgs_worktree" merge --quiet --no-edit FETCH_HEAD 2>/dev/null; then
-      echo "Warning: merge conflict in omarchy-pkgs PR #$n; building from the checkout as-is." >&2
-      git -C "$pkgs_worktree" merge --abort 2>/dev/null || true
-      git -C "$pkgs_worktree" reset --quiet --hard "$base"
-      return 0
+    if ! merge_output=$(git -C "$pkgs_worktree" merge --quiet --no-edit FETCH_HEAD 2>&1); then
+      conflicted=$(git -C "$pkgs_worktree" diff --name-only --diff-filter=U)
+      if [[ -n $conflicted ]]; then
+        echo "Error: unresolved conflict in omarchy-pkgs PR #$n; refusing to omit it." >&2
+        printf '%s\n' "$merge_output" "$conflicted" >&2
+        git -C "$pkgs_worktree" merge --abort 2>/dev/null || true
+        return 1
+      fi
+      git -C "$pkgs_worktree" commit --quiet --no-edit || return 1
+      echo "Reused verified Git rerere resolution for packaging PR #$n."
     fi
   done
   if [[ ! -f $pkgs_worktree/pkgbuilds/omarchy-dev/PKGBUILD ]]; then
-    echo "Warning: merged omarchy-pkgs tree has no PKGBUILDs; building from the checkout as-is." >&2
+    echo "Error: merged omarchy-pkgs tree has no PKGBUILDs." >&2
     cleanup_pkgs_worktree
     trap - EXIT
-    return 0
+    return 1
   fi
   pkgs_pkgbuilds_dir=$pkgs_worktree/pkgbuilds
 }
@@ -410,7 +443,6 @@ prepare_pkgs_build_dir() {
 rebuild_dev_packages() {
   local pkgbuilds_dir build_dir sha dirty pkg dir built
   local -a built_pkgs=()
-  prepare_pkgs_build_dir
   pkgbuilds_dir=$pkgs_pkgbuilds_dir
   if [[ ! -f $pkgbuilds_dir/omarchy-dev/PKGBUILD ]]; then
     echo "Note: no omarchy-pkgs checkout at $pkgbuilds_dir; leaving the installed package stale."
@@ -481,7 +513,7 @@ rebuild_dev_packages() {
     }
     built_pkgs+=("$built")
   done
-  if ! sudo pacman -U --noconfirm --ask 4 --overwrite='*' "${built_pkgs[@]}"; then
+  if ! install_packages "${built_pkgs[@]}"; then
     echo "Warning: the dev package install failed; packaged copies are stale." >&2
     return 1
   fi
@@ -500,11 +532,89 @@ restart_live_shell() {
   fi
 }
 
+install_packages() {
+  if [[ -t 0 ]]; then
+    sudo pacman -U --noconfirm --ask 4 --overwrite='*' "$@"
+  else
+    pkexec pacman -U --noconfirm --ask 4 --overwrite='*' "$@"
+  fi
+}
+
+# Runtime packages are checked independently of privileged-helper skew. Prefer
+# a recipe from the merged packaging tree, then the reviewed bundled recipe.
+refresh_runtime_packages() {
+  local package recipe fingerprint build_dir archive candidate
+  local -a archives=()
+  for package in $runtime_packages; do
+    if [[ ! $package =~ ^[a-zA-Z0-9][a-zA-Z0-9@._+-]*$ ]]; then
+      echo "Error: invalid runtime package name: $package" >&2
+      return 1
+    fi
+    pacman -Q "$package" >/dev/null 2>&1 || continue
+    recipe=$pkgs_pkgbuilds_dir/$package
+    if [[ ! -f $recipe/PKGBUILD ]]; then
+      recipe=$script_dir/packages/$package
+    fi
+    if [[ ! -f $recipe/PKGBUILD ]]; then
+      echo "Error: no recipe for installed runtime package $package." >&2
+      return 1
+    fi
+    fingerprint=$(package_fingerprint "$recipe") || return 1
+    if package_current "$package" "$fingerprint"; then
+      echo "$package matches its recipe and installed ABI dependencies."
+      continue
+    fi
+    echo "Rebuilding $package from $recipe (recipe, dependency or installed version changed)..."
+    build_dir=$(mktemp -d -t "omarchy-dev-sync-$package.XXXXXX") || return 1
+    cp -a "$recipe/." "$build_dir/" || return 1
+    # makepkg must run as the user. Dependency installation needs an interactive
+    # terminal; agent calls should install missing build dependencies separately.
+    if [[ -t 0 ]]; then
+      (cd "$build_dir" && makepkg --syncdeps --noconfirm) || return 1
+    else
+      (cd "$build_dir" && makepkg --noconfirm) || return 1
+    fi
+    mapfile -t archives < <(cd "$build_dir" && makepkg --packagelist)
+    archive=""
+    for candidate in "${archives[@]}"; do
+      if [[ -f $candidate && ${candidate##*/} != *-debug-* ]]; then
+        archive=$candidate
+        break
+      fi
+    done
+    if [[ -z $archive ]]; then
+      echo "Error: no runtime package archive was built for $package." >&2
+      return 1
+    fi
+    install_packages "$archive" || return 1
+    record_package "$package" "$fingerprint" || return 1
+    rm -rf "$build_dir"
+  done
+}
+
 packaged_skew
-if (( pkg_build )) && (( ${#PACKAGED_SKEW[@]} > 0 )); then
-  echo "Rebuilding the dev packages (${PACKAGED_SKEW[*]} differ from /usr/bin)..."
-  if ! rebuild_dev_packages; then
-    echo "Warning: package refresh failed; run omarchy dev pkg test omarchy $repo manually." >&2
+if (( pkg_build )); then
+  prepare_pkgs_build_dir
+  # Check packaging-only changes even when all privileged helpers match.
+  dev_fingerprint=""
+  if [[ -f $pkgs_pkgbuilds_dir/omarchy-dev/PKGBUILD && -f $pkgs_pkgbuilds_dir/omarchy-settings-dev/PKGBUILD ]]; then
+    dev_fingerprint=$(package_fingerprint "$pkgs_pkgbuilds_dir/omarchy-dev")
+    settings_fingerprint=$(package_fingerprint "$pkgs_pkgbuilds_dir/omarchy-settings-dev")
+    dev_fingerprint="$dev_fingerprint $settings_fingerprint"
+    if (( ${#PACKAGED_SKEW[@]} > 0 )) || ! package_current omarchy-dev "$dev_fingerprint" || ! package_current omarchy-settings-dev "$dev_fingerprint"; then
+      echo "Rebuilding dev packages (privileged helpers or packaging recipes changed)..."
+      if rebuild_dev_packages; then
+        record_package omarchy-dev "$dev_fingerprint"
+        record_package omarchy-settings-dev "$dev_fingerprint"
+      else
+        echo "Error: dev package refresh failed; keeping the running shell." >&2
+        exit 1
+      fi
+    fi
+  fi
+  if ! refresh_runtime_packages; then
+    echo "Error: runtime package refresh failed; keeping the running shell." >&2
+    exit 1
   fi
 fi
 packaged_skew

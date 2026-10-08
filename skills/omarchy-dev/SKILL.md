@@ -22,7 +22,7 @@ integration branch.
   executable, typically symlinked onto PATH as `omarchy-dev-sync`).
   Config lives in `~/.config/omarchy-dev-sync/config`
   (`repo`, `upstream`, `fork`, `head`, `integration`, `pkgs_repo`,
-  `pkgs_prs`) and optional `extra-branches` (override the directory with
+  `pkgs_prs`, `runtime_packages`) and optional `extra-branches` / `extra-prs` (override the directory with
   `OMARCHY_DEV_SYNC_CONFIG`; environment variables win over the file).
   Defaults: `repo=~/src/omarchy`, `upstream=origin`, `fork=fork`,
   `head=quattro`, `integration=integration-prs`,
@@ -57,6 +57,12 @@ integration branch.
    includes your open omarchy-pkgs PRs (merged into a throwaway worktree),
    so verify packaging changes by running the sync and checking the
    installed packages, not just the checkout.
+   `extra-prs` can include reviewed upstream PRs by other authors, one number
+   per line. No duplicate fork PR is needed. Runtime packages (default
+   `quickshell`) rebuild when their recipe/patch, declared Qt dependencies, or
+   installed version changes, independently of privileged-helper skew. The
+   merged packaging tree takes priority over bundled recipes. Dev packaging-only
+   changes also trigger a refresh. `--no-pkg` skips both paths.
 5. Verify with focused suites first (`bash test/shell.d/<area>-test.sh`),
    then `./test/shell` and/or `./test/cli` as appropriate.
 
@@ -97,9 +103,9 @@ integration branch.
 - The script auto-resolves append-only conflicts in
   `test/shell.d/theme-staging-test.sh` (`colour_only` / `denied` arrays) as
   a sorted union. Any other conflict aborts the rebuild and restores the
-  previous integration branch. There is no auto-resolution on the pkgs
-  side: a fetch failure or merge conflict there warns and builds from the
-  checkout as-is.
+  previous integration branch. Packaging fetch failures or unresolved merge conflicts stop the refresh;
+  rerere can reuse a verified manual resolution, but the script does not invent
+  packaging conflict resolutions.
 - `config-test.sh`, `snapper-test.sh`, `unowned-system-paths-test.sh` fail
   without an `omarchy-pkgs` checkout — environmental, unrelated to PR work.
 - Environment-specific pre-existing failures exist (e.g.

@@ -1,0 +1,4 @@
+{
+  "source": "local",
+  "rebuild_on": ["qt6-base", "qt6-declarative", "qt6-svg", "qt6-wayland"]
+}
