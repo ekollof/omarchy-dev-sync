@@ -1,5 +1,51 @@
 #!/bin/bash
 
+# Symlinks follow Git automatically; refresh installed copies with a backup.
+refresh_local_dev_skills() {
+  local source=$1 destination parent staging backup
+  local skill_home=${2:-$HOME}
+  local skill_config=${3:-${XDG_CONFIG_HOME:-$HOME/.config}}
+  local skill_codex=${4:-${CODEX_HOME:-$HOME/.codex}}
+  [[ -f $source/SKILL.md ]] || return 0
+  local -a destinations=(
+    "$skill_home/.agents/skills/omarchy-dev"
+    "$skill_home/.claude/skills/omarchy-dev"
+    "$skill_config/opencode/skills/omarchy-dev"
+    "$skill_codex/skills/omarchy-dev"
+  )
+  for destination in "${destinations[@]}"; do
+    if [[ -L $destination ]]; then
+      if [[ $(readlink -f "$destination") != "$(readlink -f "$source")" ]]; then
+        echo "Warning: leaving unrelated skill symlink unchanged: $destination" >&2
+      fi
+      continue
+    fi
+    [[ -d $destination && -f $destination/SKILL.md ]] || continue
+    diff -qr "$source" "$destination" >/dev/null && continue
+    parent=${destination%/*}
+    staging=$(mktemp -d "$parent/.omarchy-dev-update.XXXXXX") || return 1
+    if ! cp -a "$source/." "$staging/"; then
+      rm -rf "$staging"
+      return 1
+    fi
+    backup=$(mktemp -d "$destination.bak.XXXXXX") || {
+      rm -rf "$staging"
+      return 1
+    }
+    rmdir "$backup"
+    if ! mv "$destination" "$backup"; then
+      rm -rf "$staging"
+      return 1
+    fi
+    if ! mv "$staging" "$destination"; then
+      mv "$backup" "$destination"
+      rm -rf "$staging"
+      return 1
+    fi
+    echo "Updated local omarchy-dev skill: $destination (backup: $backup)"
+  done
+}
+
 # Only fast-forward a clean checkout; never stash, reset, or merge local work.
 self_update_checkout() {
   local checkout=$1 script=$2 branch remote merge_ref current target status

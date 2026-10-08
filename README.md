@@ -48,6 +48,8 @@ ln -sf ~/src/omarchy-dev-sync/skills/omarchy-dev ~/.claude/skills/omarchy-dev
 ln -sf ~/src/omarchy-dev-sync/skills/omarchy-dev ~/.agents/skills/omarchy-dev
 ```
 
+Startup also refreshes existing copied `omarchy-dev` installations in `~/.agents/skills`, `~/.claude/skills`, `${XDG_CONFIG_HOME:-~/.config}/opencode/skills`, and `${CODEX_HOME:-~/.codex}/skills`. Changed copies are replaced with the bundled skill directory, with the previous directory retained as `omarchy-dev.bak.*`. Unchanged copies are skipped, symlinks into this checkout update automatically, and symlinks elsewhere are preserved with a warning. Missing installations are not created. This also catches manual Git pulls; `--no-self-update` or `self_update=0` skips skill refresh.
+
 Then from anywhere:
 
 ```bash
@@ -93,6 +95,7 @@ For a reviewed PR by another author, put its upstream PR number in `extra-prs` (
 
 ```bash
 python3 tests/self-update-test.py
+bash tests/skill-refresh-test.sh
 python3 tests/package-version-merge-test.py
 bash tests/package-state-test.sh
 python3 tests/sync-runtime-test.py

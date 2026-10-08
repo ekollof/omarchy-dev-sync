@@ -26,11 +26,15 @@ set -euo pipefail
 script_dir=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 source "$script_dir/lib/self-update.sh"
 self_update_checkout "$script_dir" "$script_dir/omarchy-dev-sync" "$@"
+refresh_local_dev_skills "$script_dir/skills/omarchy-dev"
 unset OMARCHY_DEV_SYNC_SELF_UPDATED
 printf 'old\\n'
 printf '<%s>\\n' "$@"
 '''
     (publisher / 'omarchy-dev-sync').write_text(script)
+    bundled_skill = publisher / 'skills/omarchy-dev'
+    bundled_skill.mkdir(parents=True)
+    (bundled_skill / 'SKILL.md').write_text('old skill\n')
     run('git', 'add', '.', cwd=publisher)
     run('git', 'commit', '-qm', 'initial', cwd=publisher)
     initial = run('git', 'rev-parse', 'HEAD', cwd=publisher).strip()
@@ -38,12 +42,19 @@ printf '<%s>\\n' "$@"
     run('git', 'push', '-qu', 'origin', 'master', cwd=publisher)
     run('git', 'clone', '-q', '-b', 'master', str(remote), str(clone))
     env = dict(os.environ)
+    env['HOME'] = str(temp / 'home')
+    env['XDG_CONFIG_HOME'] = str(temp / 'config-home')
+    env['CODEX_HOME'] = str(temp / 'codex-home')
+    installed_skill = temp / 'home/.agents/skills/omarchy-dev'
+    installed_skill.mkdir(parents=True)
+    (installed_skill / 'SKILL.md').write_text('old skill\n')
     env.pop('OMARCHY_DEV_SYNC_SELF_UPDATED', None)
     launcher = temp / 'launcher'
     launcher.symlink_to(clone / 'omarchy-dev-sync')
     command = ('bash', str(launcher), '--no-pkg', 'two words', '')
     assert 'old' in run(*command, env=env)
     (publisher / 'omarchy-dev-sync').write_text(script.replace("printf 'old", "printf 'new"))
+    (bundled_skill / 'SKILL.md').write_text('new skill\n')
     run('git', 'add', '.', cwd=publisher)
     run('git', 'commit', '-qm', 'update', cwd=publisher)
     run('git', 'push', '-q', cwd=publisher)
@@ -56,6 +67,9 @@ printf '<%s>\\n' "$@"
     assert 'new\n<--no-pkg>\n<two words>\n<>\n' in output
     assert output.count('Checking omarchy-dev-sync') == 1
     assert run('git', 'rev-parse', 'HEAD', cwd=clone).strip() == target
+    assert (installed_skill / 'SKILL.md').read_text() == 'new skill\n'
+    backups = list(installed_skill.parent.glob('omarchy-dev.bak.*'))
+    assert len(backups) == 1 and (backups[0] / 'SKILL.md').read_text() == 'old skill\n'
     print('ok - fast-forward reexec preserves arguments and avoids a fetch loop; dirty work preserved')
     run('git', 'config', 'user.name', 'Test', cwd=clone)
     run('git', 'config', 'user.email', 'test@example.invalid', cwd=clone)
