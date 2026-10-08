@@ -54,6 +54,10 @@ with tempfile.TemporaryDirectory() as directory:
     log.write_text('')
     mock = {
         'gh': """#!/bin/bash
+if [[ $1 == pr && $2 == list && $* != *"--author @me"* ]]; then
+  echo 'PR author must come from the active gh account (@me)' >&2
+  exit 88
+fi
 if [[ -n ${TEST_PKGS_SLUG:-} && $* == *"$TEST_PKGS_SLUG"* ]]; then
   [[ ! -f $TEST_PKGS_ERROR ]] || exit 7
   printf '%s\\n' "${TEST_PKGS_PRS:-}"

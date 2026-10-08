@@ -28,7 +28,10 @@ Known append-only conflicts in `test/shell.d/theme-staging-test.sh` (`colour_onl
   - `fork` → your GitHub fork
 - [`gh`](https://cli.github.com/) authenticated as the PR author
 - Optional: `omarchy dev link` pointing at that clone
+
 - Optional, for the automatic package refresh: an [omarchy-pkgs](https://github.com/omacom/omarchy-pkgs) checkout at `~/Work/omarchy/omarchy-pkgs` (or `OMARCHY_PKGBUILDS_DIR` pointed at one), and sudo for terminal installs (pkexec for noninteractive callers). Runtime builds also need their PKGBUILD build dependencies; terminal calls let makepkg install them, while agent/background calls must install missing dependencies separately. Your open PRs against omacom/omarchy-pkgs are merged into a throwaway worktree for the build; the checkout itself is never modified. Point `OMARCHY_PKGBUILDS_DIR` at a directory to use those PKGBUILDs as-is and skip the PR merge.
+
+PR ownership follows the active GitHub CLI account: both source and packaging queries use `gh pr list --author @me`. Switch accounts with `gh auth switch`; no username is configured or hardcoded in the script. Upstream, fork and self-update URLs come from Git remotes. The clone URL below identifies this project's repository, not the account whose PRs are selected.
 
 ## Install
 

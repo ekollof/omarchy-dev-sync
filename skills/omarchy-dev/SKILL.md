@@ -81,6 +81,8 @@ integration branch.
 
 ## Checking PRs
 
+PR ownership follows GitHub CLI's active account through `--author @me`, for both source and packaging repositories. Use `gh auth switch` to change accounts; Git remotes determine repository/fork URLs independently of the active account.
+
 - List your open PRs: `gh pr list --repo <upstream-slug> --author @me --state open`
   (the script derives `<upstream-slug>` from the upstream remote URL).
   Packaging PRs live in a different repo: `gh pr list --repo
