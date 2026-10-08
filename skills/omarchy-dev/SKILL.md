@@ -21,7 +21,7 @@ integration branch.
 - Sync script: `omarchy-dev-sync` (this repo's `omarchy-dev-sync`
   executable, typically symlinked onto PATH as `omarchy-dev-sync`).
   Config lives in `~/.config/omarchy-dev-sync/config`
-  (`repo`, `upstream`, `fork`, `head`, `integration`, `self_update`, `pkgs_repo`,
+  (`repo`, `upstream`, `fork`, `head`, `integration`, `self_update`, `package_sources`, `pkgs_repo`,
   `pkgs_prs`, `runtime_packages`) and optional `extra-branches` / `extra-prs` (override the directory with
   `OMARCHY_DEV_SYNC_CONFIG`; environment variables win over the file).
   Defaults: `repo=~/src/omarchy`, `upstream=origin`, `fork=fork`,
@@ -52,6 +52,7 @@ integration branch.
    rewritten; these are personal fork branches).
 4. The script checks its own remote tracking branch first, fast-forwards a clean checkout, and restarts with the original arguments when updated. Local changes or ahead/diverged history are preserved; fetch failures warn and continue. Use `--no-self-update`, config `self_update=0`, or `OMARCHY_DEV_SYNC_SELF_UPDATE=0` to opt out.
    Startup refreshes existing copied omarchy-dev skills in standard Agents, Claude, OpenCode and Codex skill directories, backing up changed copies. Symlinks into this checkout already follow updates; unrelated symlinks and missing installations are preserved. Self-update opt-outs also skip skill refresh.
+   Before restarting, the persistent dev link is checked against the synced repo. Known Omarchy stable/rc package and Arch mirror URLs are aligned with edge with backups, retaining custom config. No package databases or system packages are updated by this check; run omarchy update afterwards. It also runs with --no-pkg; opt out with --no-package-sources, package_sources=0, or OMARCHY_DEV_SYNC_PACKAGE_SOURCES=0.
    Run `omarchy-dev-sync` from anywhere to rebuild and push the integration
    branch, refresh stale dev packages, and restart the live shell. It ends
    back on the integration branch. Flags: `--no-restart` skips the shell

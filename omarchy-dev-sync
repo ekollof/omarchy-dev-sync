@@ -11,6 +11,7 @@ set -euo pipefail
 script_dir=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 source "$script_dir/lib/package-state.sh"
 source "$script_dir/lib/self-update.sh"
+source "$script_dir/lib/dev-package-sources.sh"
 original_args=("$@")
 package_state_dir=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-dev-sync/packages
 
@@ -26,6 +27,7 @@ pkgs_repo=$HOME/Work/omarchy/omarchy-pkgs
 pkgs_prs=1
 runtime_packages="quickshell"
 self_update=1
+package_sources=1
 
 if [[ -f $config_dir/config ]]; then
   # shellcheck disable=SC1091
@@ -43,10 +45,11 @@ pkgs_repo=${OMARCHY_DEV_SYNC_PKGS_REPO:-$pkgs_repo}
 pkgs_prs=${OMARCHY_DEV_SYNC_PKGS_PRS:-$pkgs_prs}
 runtime_packages=${OMARCHY_DEV_SYNC_RUNTIME_PACKAGES-$runtime_packages}
 self_update=${OMARCHY_DEV_SYNC_SELF_UPDATE:-$self_update}
+package_sources=${OMARCHY_DEV_SYNC_PACKAGE_SOURCES:-$package_sources}
 
 usage() {
   cat <<USAGE
-Usage: omarchy-dev-sync [--no-restart] [--no-pkg] [--no-self-update]
+Usage: omarchy-dev-sync [--no-restart] [--no-pkg] [--no-self-update] [--no-package-sources]
 
   Fetch $upstream/$head and rebuild $integration by merging every open PR
 of yours (plus optional extra branches) so an omarchy-dev-link checkout
@@ -55,6 +58,7 @@ omarchy-pkgs PRs are merged into a disposable worktree first, so the
 packages under test include your packaging fixes.
 
   --no-self-update  Skip checking this script's Git tracking branch for updates.
+  --no-package-sources  Leave package mirror/channel configuration unchanged.
   --no-restart  Do not restart the live Omarchy shell after a successful rebuild.
   --no-pkg      Do not rebuild and install the dev packages after a successful
                 rebuild.
@@ -66,6 +70,7 @@ Config (bash assignments, then extra-branches):
 
 Environment overrides the config file:
   OMARCHY_DEV_SYNC_SELF_UPDATE   Update this script before syncing (default: 1)
+  OMARCHY_DEV_SYNC_PACKAGE_SOURCES  Align active dev-link mirrors with edge (default: 1)
   OMARCHY_DEV_SYNC_REPO          Omarchy checkout (default: $repo)
   OMARCHY_DEV_SYNC_UPSTREAM      Upstream remote (default: $upstream)
   OMARCHY_DEV_SYNC_FORK          Your fork remote (default: $fork)
@@ -95,6 +100,10 @@ while (($#)); do
       ;;
     --no-self-update)
       self_update=0
+      shift
+      ;;
+    --no-package-sources)
+      package_sources=0
       shift
       ;;
     --no-pkg)
@@ -641,6 +650,9 @@ packaged_skew
 if (( ${#PACKAGED_SKEW[@]} > 0 )); then
   echo "Note: checkout and packaged copies still differ for: ${PACKAGED_SKEW[*]}"
   echo "      pkexec runs /usr/bin; those helpers refuse to elevate until the package is refreshed."
+fi
+if [[ $package_sources == 1 ]]; then
+  ensure_dev_package_sources
 fi
 restart_live_shell
 

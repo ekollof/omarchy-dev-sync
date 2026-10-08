@@ -17,6 +17,8 @@ Before syncing, it checks its own Git tracking branch and fast-forwards a clean 
 7. Checks installed runtime packages independently of Omarchy helper differences. Quickshell uses the merged omarchy-pkgs recipe when available, otherwise the bundled Arch recipe with upstream Qt 6.12 fix `5d5d498`. A recipe/patch change, an installed Qt dependency change, or replacement of the installed package triggers a rebuild. Successful installations are recorded under `${XDG_STATE_HOME:-~/.local/state}/omarchy-dev-sync/packages`; unchanged packages are skipped. A build/install failure stops before restarting the shell.
 8. Restarts the live Omarchy shell when this checkout is the session `OMARCHY_PATH`.
 
+Before restarting, it checks the persistent dev link in `/etc/omarchy.conf`. When that link points at the synced checkout, it aligns known Omarchy stable/rc URLs in `/etc/pacman.conf` and `/etc/pacman.d/mirrorlist` with edge, preserving custom repositories, settings and comments. Changed files get `*.bak.omarchy-dev-sync.*` backups. It does not refresh package databases or perform a system upgrade: run `omarchy update` afterwards. This prevents development migrations from requesting packages missing from stable. Packaged installations and other linked checkouts are untouched. Repair needs sudo in a terminal or pkexec otherwise; failure stops the sync. This check also runs with `--no-pkg`; use `--no-package-sources`, config `package_sources=0`, or `OMARCHY_DEV_SYNC_PACKAGE_SOURCES=0` to opt out.
+
 Known append-only conflicts in `test/shell.d/theme-staging-test.sh` (`colour_only` / `denied` arrays) are resolved as a sorted union. Anything else aborts the rebuild and restores the previous integration branch.
 
 ## Requirements
@@ -75,6 +77,7 @@ pkgs_repo=$HOME/Work/omarchy/omarchy-pkgs
 pkgs_prs=1
 runtime_packages="quickshell"
 self_update=1
+package_sources=1
 ```
 
 | File / variable | Default | Meaning |
@@ -97,6 +100,7 @@ For a reviewed PR by another author, put its upstream PR number in `extra-prs` (
 python3 tests/self-update-test.py
 bash tests/skill-refresh-test.sh
 python3 tests/package-version-merge-test.py
+python3 tests/dev-package-sources-test.py
 bash tests/package-state-test.sh
 python3 tests/sync-runtime-test.py
 ```
