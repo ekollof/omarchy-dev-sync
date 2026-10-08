@@ -93,6 +93,7 @@ For a reviewed PR by another author, put its upstream PR number in `extra-prs` (
 
 ```bash
 python3 tests/self-update-test.py
+python3 tests/package-version-merge-test.py
 bash tests/package-state-test.sh
 python3 tests/sync-runtime-test.py
 ```
@@ -103,5 +104,5 @@ These tests cover selected PR inclusion, runtime refresh with zero helper skew, 
 
 - The working tree of the Omarchy checkout must be clean.
 - Dev package refresh checks both privileged-helper skew and packaging recipe fingerprints. Runtime package refresh checks its own recipe, installed version, and declared ABI dependencies. `--no-pkg` skips all package work. The first package-enabled sync establishes fingerprints, so it rebuilds packages once even if a matching local rebuild was previously installed by hand.
-- The omarchy-pkgs PR merge is local only: nothing is pushed. Fetch failures and unresolved merge conflicts stop package refresh so packaging patches cannot silently disappear. Git rerere can replay a resolution you have verified by hand. With PR merging enabled, recipes come from a disposable worktree of the freshly fetched default branch even when no PR is open; the original checkout stays untouched.
+- The omarchy-pkgs PR merge is local only: nothing is pushed. Fetch failures and unresolved merge conflicts stop package refresh so packaging patches cannot silently disappear. For the two dev PKGBUILDs, independent upstream `pkgver` changes and PR `pkgrel` increases are combined automatically, preserving the upstream version and PR release bump; all remaining content must merge cleanly with Git. Git rerere can also replay a resolution you have verified by hand. With PR merging enabled, recipes come from a disposable worktree of the freshly fetched default branch even when no PR is open; the original checkout stays untouched.
 - This is not part of Omarchy itself. It is a personal workflow published in case it is useful to other people with a stack of open PRs.

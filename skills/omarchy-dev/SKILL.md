@@ -106,7 +106,10 @@ integration branch.
   a sorted union. Any other conflict aborts the rebuild and restores the
   previous integration branch. Packaging fetch failures or unresolved merge conflicts stop the refresh;
   rerere can reuse a verified manual resolution, but the script does not invent
-  packaging conflict resolutions.
+  packaging logic resolutions. Independent upstream pkgver changes and PR
+  pkgrel increases in the two dev PKGBUILDs are combined automatically only
+  when all remaining content merges cleanly; this also works on fresh machines
+  without a local rerere cache.
 - `config-test.sh`, `snapper-test.sh`, `unowned-system-paths-test.sh` fail
   without an `omarchy-pkgs` checkout — environmental, unrelated to PR work.
 - Environment-specific pre-existing failures exist (e.g.

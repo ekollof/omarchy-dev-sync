@@ -429,6 +429,10 @@ prepare_pkgs_build_dir() {
     fi
     if ! merge_output=$(git -C "$pkgs_worktree" merge --quiet --no-edit FETCH_HEAD 2>&1); then
       conflicted=$(git -C "$pkgs_worktree" diff --name-only --diff-filter=U)
+      if [[ -n $conflicted ]] && python3 "$script_dir/lib/resolve-package-versions.py" "$pkgs_worktree"; then
+        echo "Resolved independent upstream pkgver / PR pkgrel changes for packaging PR #$n."
+        conflicted=$(git -C "$pkgs_worktree" diff --name-only --diff-filter=U)
+      fi
       if [[ -n $conflicted ]]; then
         echo "Error: unresolved conflict in omarchy-pkgs PR #$n; refusing to omit it." >&2
         printf '%s\n' "$merge_output" "$conflicted" >&2
@@ -436,7 +440,7 @@ prepare_pkgs_build_dir() {
         return 1
       fi
       git -C "$pkgs_worktree" commit --quiet --no-edit || return 1
-      echo "Reused verified Git rerere resolution for packaging PR #$n."
+      echo "Committed resolved packaging PR #$n."
     fi
   done
   if [[ ! -f $pkgs_worktree/pkgbuilds/omarchy-dev/PKGBUILD ]]; then
