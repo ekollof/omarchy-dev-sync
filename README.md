@@ -19,7 +19,11 @@ Before syncing, it checks its own Git tracking branch and fast-forwards a clean 
 
 Before restarting, it checks the persistent dev link in `/etc/omarchy.conf`. When that link points at the synced checkout, it aligns known Omarchy stable/rc URLs in `/etc/pacman.conf` and `/etc/pacman.d/mirrorlist` with edge, preserving custom repositories, settings and comments. Changed files get `*.bak.omarchy-dev-sync.*` backups. It does not refresh package databases or perform a system upgrade: run `omarchy update` afterwards. This prevents development migrations from requesting packages missing from stable. Packaged installations and other linked checkouts are untouched. Repair needs sudo in a terminal or pkexec otherwise; failure stops the sync. This check also runs with `--no-pkg`; use `--no-package-sources`, config `package_sources=0`, or `OMARCHY_DEV_SYNC_PACKAGE_SOURCES=0` to opt out.
 
-Known append-only conflicts in `test/shell.d/theme-staging-test.sh` (`colour_only` / `denied` arrays) are resolved as a sorted union. Anything else aborts the rebuild and restores the previous integration branch.
+Known append-only conflicts in `test/shell.d/theme-staging-test.sh` (`colour_only` / `denied` arrays) are resolved as a sorted union. Other conflicts require a matching verified quirk; unresolved conflicts abort the rebuild and restore the previous integration branch.
+
+Compatibility fixes live in independently removable `quirks/<id>/` directories. The [quirk contract](quirks/README.md) defines activation, source/package conflict and pre-restart hooks, including retirement rules. Each quirk checks whether it is still needed. Disable named quirks with config `disabled_quirks="qt612-shell-color"` or `OMARCHY_DEV_SYNC_DISABLED_QUIRKS` (space-separated); deleting a quirk directory retires it without editing the main script.
+
+Qt 6.12 compatibility is portable: while the fetched base still has `Color.qml` instead of `ShellColor.qml`, installed Qt 6.12 or newer automatically includes upstream PR #14511, without a per-machine `extra-prs` entry. A QML merge conflict is resolved only when the incoming file is exactly the merge-base file with `Color.` renamed to `ShellColor.`; existing local behavior is retained. Before restart, user plugin QML importing `qs.Commons` is migrated for members exposed by the new palette, with per-file backups. Unrelated Qt color members, qualified imports and symlinked plugins are preserved. No saved rerere cache is required; changes beyond the verified rename still stop the sync.
 
 ## Requirements
 
@@ -104,6 +108,8 @@ python3 tests/self-update-test.py
 bash tests/skill-refresh-test.sh
 python3 tests/package-version-merge-test.py
 python3 tests/dev-package-sources-test.py
+python3 tests/shell-color-compat-test.py
+bash tests/quirks-test.sh
 bash tests/package-state-test.sh
 python3 tests/sync-runtime-test.py
 ```

@@ -27,6 +27,8 @@ with tempfile.TemporaryDirectory() as directory:
     run(['git', 'config', 'user.name', 'Test'], source)
     run(['git', 'config', 'user.email', 'test@example.invalid'], source)
     (source / 'marker').write_text('base\n')
+    (source / 'shell/Commons').mkdir(parents=True)
+    (source / 'shell/Commons/Color.qml').write_text('old palette\n')
     run(['git', 'add', '.'], source)
     run(['git', 'commit', '-qm', 'base'], source)
     run(['git', 'branch', 'integration-prs'], source)
@@ -99,7 +101,10 @@ echo 0.3.1-1.1 > "$TEST_VERSION"
         if name.startswith('OMARCHY_'):
             del env[name]
     command = ['bash', str(script / 'omarchy-dev-sync'), '--no-restart']
-    run(command, env=env)
+    initial_output = run(command, env=env)
+    assert initial_output.count('selected #14511') == 1
+    assert (source / 'selected').is_file()
+    (config / 'extra-prs').unlink()
     assert (source / 'selected').is_file()
     assert len(log.read_text().splitlines()) == 1
     print('ok - selected upstream PR merges and runtime rebuild runs with zero helper skew')

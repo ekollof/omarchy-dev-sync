@@ -66,6 +66,8 @@ integration branch.
    installed version changes, independently of privileged-helper skew. The
    merged packaging tree takes priority over bundled recipes. Dev packaging-only
    changes also trigger a refresh. `--no-pkg` skips both paths.
+   Qt 6.12 automatically selects compatibility PR14511 until the fetched base contains ShellColor. Pure incoming Color-to-ShellColor rename conflicts retain local behavior without a per-machine rerere cache. User plugin palette references migrate with backups before restart; broader conflicts still stop the sync.
+   Compatibility workarounds live in independently removable quirks/<id> directories with phase hooks and retirement conditions (quirks/README.md). Config disabled_quirks or OMARCHY_DEV_SYNC_DISABLED_QUIRKS can disable named quirks; retire a fix by removing its directory.
 5. Verify with focused suites first (`bash test/shell.d/<area>-test.sh`),
    then `./test/shell` and/or `./test/cli` as appropriate.
 

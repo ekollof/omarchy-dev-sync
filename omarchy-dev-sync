@@ -12,6 +12,7 @@ script_dir=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 source "$script_dir/lib/package-state.sh"
 source "$script_dir/lib/self-update.sh"
 source "$script_dir/lib/dev-package-sources.sh"
+source "$script_dir/lib/quirks.sh"
 original_args=("$@")
 package_state_dir=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-dev-sync/packages
 
@@ -28,6 +29,7 @@ pkgs_prs=1
 runtime_packages="quickshell"
 self_update=1
 package_sources=1
+disabled_quirks=""
 
 if [[ -f $config_dir/config ]]; then
   # shellcheck disable=SC1091
@@ -46,6 +48,7 @@ pkgs_prs=${OMARCHY_DEV_SYNC_PKGS_PRS:-$pkgs_prs}
 runtime_packages=${OMARCHY_DEV_SYNC_RUNTIME_PACKAGES-$runtime_packages}
 self_update=${OMARCHY_DEV_SYNC_SELF_UPDATE:-$self_update}
 package_sources=${OMARCHY_DEV_SYNC_PACKAGE_SOURCES:-$package_sources}
+disabled_quirks=${OMARCHY_DEV_SYNC_DISABLED_QUIRKS-$disabled_quirks}
 
 usage() {
   cat <<USAGE
@@ -71,6 +74,7 @@ Config (bash assignments, then extra-branches):
 Environment overrides the config file:
   OMARCHY_DEV_SYNC_SELF_UPDATE   Update this script before syncing (default: 1)
   OMARCHY_DEV_SYNC_PACKAGE_SOURCES  Align active dev-link mirrors with edge (default: 1)
+  OMARCHY_DEV_SYNC_DISABLED_QUIRKS  Space-separated quirk IDs to disable
   OMARCHY_DEV_SYNC_REPO          Omarchy checkout (default: $repo)
   OMARCHY_DEV_SYNC_UPSTREAM      Upstream remote (default: $upstream)
   OMARCHY_DEV_SYNC_FORK          Your fork remote (default: $fork)
@@ -231,11 +235,18 @@ extra_prs=()
 if [[ -f $config_dir/extra-prs ]]; then
   mapfile -t extra_prs < <(sed -E 's/#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//; /^$/d' "$config_dir/extra-prs")
 fi
+quirk_prs=$(run_quirks select-prs "$repo")
+while IFS= read -r number; do
+  [[ -n $number ]] && extra_prs+=("$number")
+done <<<"$quirk_prs"
+declare -A selected_pr_seen=()
 for number in "${extra_prs[@]}"; do
   if [[ ! $number =~ ^[1-9][0-9]*$ ]]; then
     echo "Error: invalid upstream PR number in extra-prs: $number" >&2
     exit 1
   fi
+  [[ -z ${selected_pr_seen[$number]+x} ]] || continue
+  selected_pr_seen[$number]=1
   ref="refs/remotes/$upstream/pull/$number"
   if ! git fetch --quiet "$upstream" "+pull/$number/head:$ref"; then
     echo "Error: could not fetch selected PR #$number; leaving $integration alone." >&2
@@ -318,11 +329,17 @@ if (( ${#merge_refs[@]} > 0 )); then
       # rerere replays known resolutions and stages them; an unresolved
       # conflict still shows up in the index.
       if [[ -n $(git diff --name-only --diff-filter=U) ]]; then
-        resolve_theme_staging_union || restore_on_failure
+        if run_quirks resolve-source "$repo"; then
+          :
+        else
+          quirk_status=$?
+          (( quirk_status == 2 )) || restore_on_failure
+          resolve_theme_staging_union || restore_on_failure
+          git add test/shell.d/theme-staging-test.sh
+        fi
         if [[ -n $(git diff --name-only --diff-filter=U) ]]; then
           restore_on_failure
         fi
-        git add test/shell.d/theme-staging-test.sh
       fi
       git commit --no-edit >/dev/null
     fi
@@ -439,9 +456,13 @@ prepare_pkgs_build_dir() {
     fi
     if ! merge_output=$(git -C "$pkgs_worktree" merge --quiet --no-edit FETCH_HEAD 2>&1); then
       conflicted=$(git -C "$pkgs_worktree" diff --name-only --diff-filter=U)
-      if [[ -n $conflicted ]] && python3 "$script_dir/lib/resolve-package-versions.py" "$pkgs_worktree"; then
-        echo "Resolved independent upstream pkgver / PR pkgrel changes for packaging PR #$n."
-        conflicted=$(git -C "$pkgs_worktree" diff --name-only --diff-filter=U)
+      if [[ -n $conflicted ]]; then
+        if run_quirks resolve-packages "$pkgs_worktree"; then
+          conflicted=$(git -C "$pkgs_worktree" diff --name-only --diff-filter=U)
+        else
+          quirk_status=$?
+          (( quirk_status == 2 )) || return 1
+        fi
       fi
       if [[ -n $conflicted ]]; then
         echo "Error: unresolved conflict in omarchy-pkgs PR #$n; refusing to omit it." >&2
@@ -654,6 +675,7 @@ fi
 if [[ $package_sources == 1 ]]; then
   ensure_dev_package_sources
 fi
+run_quirks before-restart "$repo"
 restart_live_shell
 
 if command -v omarchy-notification-send >/dev/null; then

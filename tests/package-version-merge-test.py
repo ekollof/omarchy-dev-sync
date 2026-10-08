@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-resolver = Path(__file__).resolve().parents[1] / 'lib/resolve-package-versions.py'
+resolver = Path(__file__).resolve().parents[1] / 'quirks/dev-package-version/resolve.py'
 
 
 def run(checkout, *args):

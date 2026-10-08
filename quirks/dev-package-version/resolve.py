@@ -61,4 +61,4 @@ if __name__ == '__main__':
         success = resolve(Path(sys.argv[1]))
     except (OSError, subprocess.CalledProcessError):
         success = False
-    sys.exit(0 if success else 1)
+    sys.exit(0 if success else 2)
