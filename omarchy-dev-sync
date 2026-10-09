@@ -10,6 +10,7 @@ set -euo pipefail
 
 script_dir=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 source "$script_dir/lib/package-state.sh"
+source "$script_dir/lib/packaged-skew.sh"
 source "$script_dir/lib/self-update.sh"
 source "$script_dir/lib/dev-package-sources.sh"
 source "$script_dir/lib/quirks.sh"
@@ -384,22 +385,6 @@ fi
 newest=$(git rev-parse --short HEAD)
 pr_count=${#merge_refs[@]}
 
-# Helpers that fail closed when the checkout and the packaged copy differ,
-# i.e. exactly the ones that refuse to elevate on a stale package.
-packaged_skew() {
-  PACKAGED_SKEW=()
-  local cmd pkg
-  for cmd in "$repo"/bin/omarchy-*; do
-    [[ -f $cmd ]] || continue
-    grep -q 'privileged_copy_matches' "$cmd" 2>/dev/null || continue
-    pkg=/usr/bin/${cmd##*/}
-    [[ -f $pkg ]] || continue
-    cmp -s "$cmd" "$pkg" && continue
-    PACKAGED_SKEW+=("${cmd##*/}")
-  done
-  return 0
-}
-
 # Build the dev packages from a disposable worktree of the pkgs checkout
 # with your open omarchy-pkgs PRs merged, so packaging fixes ship in the
 # same sync that tests them. The checkout itself is never touched and
@@ -661,7 +646,7 @@ if (( pkg_build )); then
     settings_fingerprint=$(package_fingerprint "$pkgs_pkgbuilds_dir/omarchy-settings-dev")
     dev_fingerprint="$dev_fingerprint $settings_fingerprint"
     if (( ${#PACKAGED_SKEW[@]} > 0 )) || ! package_current omarchy-dev "$dev_fingerprint" || ! package_current omarchy-settings-dev "$dev_fingerprint"; then
-      echo "Rebuilding dev packages (privileged helpers or packaging recipes changed)..."
+      echo "Rebuilding dev packages (packaged commands, setup helpers or packaging recipes changed)..."
       if rebuild_dev_packages; then
         record_package omarchy-dev "$dev_fingerprint"
         record_package omarchy-settings-dev "$dev_fingerprint"
@@ -679,7 +664,7 @@ fi
 packaged_skew
 if (( ${#PACKAGED_SKEW[@]} > 0 )); then
   echo "Note: checkout and packaged copies still differ for: ${PACKAGED_SKEW[*]}"
-  echo "      pkexec runs /usr/bin; those helpers refuse to elevate until the package is refreshed."
+  echo "      Refresh packages before running migrations that require these commands or helpers."
 fi
 if [[ $package_sources == 1 ]]; then
   ensure_dev_package_sources
