@@ -11,6 +11,7 @@ set -euo pipefail
 script_dir=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 source "$script_dir/lib/package-state.sh"
 source "$script_dir/lib/packaged-skew.sh"
+source "$script_dir/lib/build-workspace.sh"
 source "$script_dir/lib/self-update.sh"
 source "$script_dir/lib/dev-package-sources.sh"
 source "$script_dir/lib/quirks.sh"
@@ -430,12 +431,10 @@ prepare_pkgs_build_dir() {
     return 1
   fi
   pr_numbers=$(printf '%s\n' "$pr_numbers" | sort -n | tr '\n' ' ')
-  pkgs_worktree=$(mktemp -d -t omarchy-dev-sync-pkgs.XXXXXX) || return 1
-  trap cleanup_pkgs_worktree EXIT
+  pkgs_worktree=$(mktemp -d "$build_workspace/pkgs.XXXXXX") || return 1
   if ! git -C "$pkgs_repo" worktree add --detach --quiet "$pkgs_worktree" "$base" 2>/dev/null; then
     echo "Error: could not create the omarchy-pkgs worktree." >&2
     cleanup_pkgs_worktree
-    trap - EXIT
     return 1
   fi
   if [[ -n ${pr_numbers// /} ]]; then
@@ -471,7 +470,6 @@ prepare_pkgs_build_dir() {
   if [[ ! -f $pkgs_worktree/pkgbuilds/omarchy-dev/PKGBUILD ]]; then
     echo "Error: merged omarchy-pkgs tree has no PKGBUILDs." >&2
     cleanup_pkgs_worktree
-    trap - EXIT
     return 1
   fi
   pkgs_pkgbuilds_dir=$pkgs_worktree/pkgbuilds
@@ -502,7 +500,7 @@ rebuild_dev_packages() {
   if [[ -n $(git -C "$repo" status --porcelain) ]]; then
     dirty=".dirty"
   fi
-  build_dir=$(mktemp -d -t omarchy-dev-sync-pkg.XXXXXX) || return 1
+  build_dir=$(mktemp -d "$build_workspace/pkg.XXXXXX") || return 1
   for pkg in omarchy-settings-dev omarchy-dev; do
     dir="$build_dir/$pkg"
     cp -a "$pkgbuilds_dir/$pkg" "$dir" || return 1
@@ -609,7 +607,7 @@ refresh_runtime_packages() {
       continue
     fi
     echo "Rebuilding $package from $recipe (recipe, dependency or installed version changed)..."
-    build_dir=$(mktemp -d -t "omarchy-dev-sync-$package.XXXXXX") || return 1
+    build_dir=$(mktemp -d "$build_workspace/$package.XXXXXX") || return 1
     cp -a "$recipe/." "$build_dir/" || return 1
     # makepkg must run as the user. Dependency installation needs an interactive
     # terminal; agent calls should install missing build dependencies separately.
@@ -638,6 +636,10 @@ refresh_runtime_packages() {
 
 packaged_skew
 if (( pkg_build )); then
+  prepare_build_workspace
+  trap cleanup_build_workspace EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   prepare_pkgs_build_dir
   # Check packaging-only changes even when all privileged helpers match.
   dev_fingerprint=""
