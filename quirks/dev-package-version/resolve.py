@@ -30,7 +30,7 @@ def resolve(checkout):
             versions.append(values)
         b, o, t = versions
         if not (t['pkgver'] == b['pkgver'] != o['pkgver']
-                and o['pkgrel'] == b['pkgrel'] != t['pkgrel']
+                and o['pkgrel'] in (b['pkgrel'], t['pkgrel'])
                 and b['pkgrel'].isdigit() and t['pkgrel'].isdigit()
                 and int(t['pkgrel']) > int(b['pkgrel'])):
             return False

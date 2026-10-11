@@ -12,7 +12,7 @@ def run(checkout, *args):
                                    stderr=subprocess.DEVNULL)
 
 
-for mode in ('versions', 'logic', 'both-release', 'pr-version'):
+for mode in ('versions', 'sequential', 'sequential-logic', 'logic', 'both-release', 'pr-version'):
     with tempfile.TemporaryDirectory() as directory:
         checkout = Path(directory)
         run(checkout, 'init', '-q', '-b', 'master')
@@ -27,6 +27,17 @@ for mode in ('versions', 'logic', 'both-release', 'pr-version'):
             recipe.write_text(base)
         run(checkout, 'add', '.')
         run(checkout, 'commit', '-qm', 'base')
+        if mode.startswith('sequential'):
+            run(checkout, 'switch', '-qc', 'second-pr')
+            for recipe in recipes:
+                content = base.replace('pkgrel=1', 'pkgrel=2')
+                if mode == 'sequential-logic':
+                    content = content.replace('echo base', 'echo incompatible')
+                else:
+                    content += '\n# Independent second PR packaging change\n'
+                recipe.write_text(content)
+            run(checkout, 'commit', '-qam', 'second PR release and logic')
+            run(checkout, 'switch', '-q', 'master')
         run(checkout, 'switch', '-qc', 'pr')
         for recipe in recipes:
             content = base.replace('pkgrel=1', 'pkgrel=2').replace('echo base', 'echo patch')
@@ -48,7 +59,7 @@ for mode in ('versions', 'logic', 'both-release', 'pr-version'):
         assert result.returncode != 0
         before = [recipe.read_bytes() for recipe in recipes]
         result = subprocess.run(['python3', str(resolver), str(checkout)])
-        if mode == 'versions':
+        if mode in ('versions', 'sequential', 'sequential-logic'):
             assert result.returncode == 0
             assert not run(checkout, 'diff', '--name-only', '--diff-filter=U')
             for recipe in recipes:
@@ -56,8 +67,26 @@ for mode in ('versions', 'logic', 'both-release', 'pr-version'):
                 assert 'pkgver=4.0.0.r2.gdef' in content and 'pkgrel=2' in content
                 assert '_commit=def' in content and 'echo patch' in content
             run(checkout, 'commit', '-qm', 'resolved')
+            if mode.startswith('sequential'):
+                result = subprocess.run(['git', '-C', str(checkout), 'merge', '--no-edit', 'second-pr'],
+                                        capture_output=True, text=True)
+                assert result.returncode != 0
+                before = [recipe.read_bytes() for recipe in recipes]
+                result = subprocess.run(['python3', str(resolver), str(checkout)])
+                if mode == 'sequential':
+                    assert result.returncode == 0
+                    assert not run(checkout, 'diff', '--name-only', '--diff-filter=U')
+                    for recipe in recipes:
+                        content = recipe.read_text()
+                        assert 'pkgver=4.0.0.r2.gdef' in content and 'pkgrel=2' in content
+                        assert '_commit=def' in content and 'echo patch' in content
+                        assert '# Independent second PR packaging change' in content
+                else:
+                    assert result.returncode != 0
+                    assert before == [recipe.read_bytes() for recipe in recipes]
+                    assert run(checkout, 'diff', '--name-only', '--diff-filter=U')
         else:
             assert result.returncode != 0
             assert before == [recipe.read_bytes() for recipe in recipes]
             assert run(checkout, 'diff', '--name-only', '--diff-filter=U')
-        print(f'ok - {mode}: ' + ('preserves version, pin and PR logic' if mode == 'versions' else 'refuses without edits'))
+        print(f'ok - {mode}: ' + ('preserves version, pin and PR logic' if mode in ('versions', 'sequential') else 'refuses without edits'))
