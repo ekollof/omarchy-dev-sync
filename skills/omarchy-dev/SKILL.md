@@ -61,8 +61,11 @@ integration branch.
    so verify packaging changes by running the sync and checking the
    installed packages, not just the checkout.
    `extra-prs` can include reviewed upstream PRs by other authors, one number
-   per line. No duplicate fork PR is needed. Runtime packages (default
-   `quickshell`) rebuild when their recipe/patch, declared Qt dependencies, or
+   per line. No duplicate fork PR is needed.
+   Closed/merged and deleted PR selections are removed automatically from
+   extra-prs. Deleted PRs require a successful repository access check;
+   status/authentication/network errors preserve the file and stop the sync.
+   Runtime packages (default `quickshell`) rebuild when their recipe/patch, declared Qt dependencies, or
    installed version changes, independently of privileged-helper skew. The
    merged packaging tree takes priority over bundled recipes. Dev packaging-only
    changes also trigger a refresh. `--no-pkg` skips both paths.

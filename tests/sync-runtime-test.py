@@ -56,6 +56,10 @@ with tempfile.TemporaryDirectory() as directory:
     log.write_text('')
     mock = {
         'gh': """#!/bin/bash
+if [[ $1 == api ]]; then
+  printf 'open\\n'
+  exit 0
+fi
 if [[ $1 == pr && $2 == list && $* != *"--author @me"* ]]; then
   echo 'PR author must come from the active gh account (@me)' >&2
   exit 88

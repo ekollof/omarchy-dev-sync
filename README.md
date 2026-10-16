@@ -99,12 +99,13 @@ package_sources=1
 
 To merge a branch **before** its PR is open, put the branch name in `extra-branches` (one per line, `#` comments allowed). Delete the line once the PR exists; `gh` will pick it up.
 
-For a reviewed PR by another author, put its upstream PR number in `extra-prs` (one per line; `#` comments allowed). The script fetches upstream pull refs directly, so no fork branch or duplicate PR is needed. Invalid entries or a failed fetch stop before rebuilding integration. Remove an entry once its fix is merged upstream.
+For a reviewed PR by another author, put its upstream PR number in `extra-prs` (one per line; `#` comments allowed). The script fetches upstream pull refs directly, so no fork branch or duplicate PR is needed. Closed (including merged) PRs and deleted PRs are automatically removed from this file before selection. A missing PR is removed only when GitHub confirms the repository remains accessible. Invalid entries, authentication/network errors or a failed fetch stop before rebuilding integration; status-check failures preserve the entire selection file. Comments and remaining entries are retained. Open PRs remain selected even if their fixes are incorporated through another branch.
 
 ## Validation
 
 ```bash
 python3 tests/self-update-test.py
+python3 tests/extra-prs-test.py
 bash tests/skill-refresh-test.sh
 python3 tests/package-version-merge-test.py
 python3 tests/dev-package-sources-test.py

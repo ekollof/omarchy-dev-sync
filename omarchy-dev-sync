@@ -15,6 +15,7 @@ source "$script_dir/lib/build-workspace.sh"
 source "$script_dir/lib/self-update.sh"
 source "$script_dir/lib/dev-package-sources.sh"
 source "$script_dir/lib/quirks.sh"
+source "$script_dir/lib/extra-prs.sh"
 original_args=("$@")
 package_state_dir=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-dev-sync/packages
 
@@ -234,6 +235,7 @@ done
 
 # Include an explicitly selected upstream PR without duplicating its review.
 extra_prs=()
+cleanup_extra_prs "$config_dir/extra-prs" "$slug"
 if [[ -f $config_dir/extra-prs ]]; then
   mapfile -t extra_prs < <(sed -E 's/#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//; /^$/d' "$config_dir/extra-prs")
 fi
