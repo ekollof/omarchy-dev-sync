@@ -49,12 +49,14 @@ upstream=""
 hook=$project_dir/quirks/qt612-shell-color/quirk.sh
 [[ $(bash "$hook" select-prs "$repo" HEAD) == 14511 ]]
 [[ -z $(TEST_QT_VERSION=6.11.2 bash "$hook" select-prs "$repo" HEAD) ]]
-mkdir -p "$repo/shell/plugins/notifications/components"
-echo 'import qs.Commons as Commons' > "$repo/shell/plugins/notifications/components/NotificationCard.qml"
+# NotificationCard was removed by the notification renderer rewrite. Detect
+# upstream qualification through the shared style module instead.
+echo 'import qs.Commons as Commons' > "$repo/shell/Commons/Style.qml"
 git -C "$repo" add .
 git -C "$repo" commit -qm upstream-qualified
 [[ -z $(bash "$hook" select-prs "$repo" HEAD) ]]
 [[ $(bash "$hook" retired-prs "$repo" HEAD) == 14511 ]]
+[[ ! -e $repo/shell/plugins/notifications/components/NotificationCard.qml ]]
 git -C "$repo" mv shell/Commons/Color.qml shell/Commons/ShellColor.qml
 git -C "$repo" commit -qm upstream-fixed
 [[ -z $(bash "$hook" select-prs "$repo" HEAD) ]]
