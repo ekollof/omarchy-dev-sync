@@ -39,36 +39,70 @@ PR ownership follows the active GitHub CLI account: both source and packaging qu
 
 ## Install
 
-```bash
-git clone https://github.com/ekollof/omarchy-dev-sync.git ~/src/omarchy-dev-sync
-cd ~/src/omarchy-dev-sync
-./install.sh
-```
+Run these steps as your normal user in a terminal on an existing Omarchy installation. You need Git, Python 3, an authenticated GitHub CLI (`gh auth login`), and sudo access for dev-link setup and package installation.
 
-The installer uses the configured `repo` (default `~/src/omarchy`), which must already be an Omarchy checkout. It checks `/etc/omarchy.conf` and the running session. If the checkout is not dev-linked, it explains the risks of development code, privileged commands, edge packages and migrations, then requires an explicit yes before running `omarchy dev link`. Declining or closed stdin cancels installation. A configured link that is not yet active needs a reboot; the installer reports this and never reboots automatically. It installs the launcher and agent skills without running a sync or system update.
+1. Prepare an Omarchy source checkout. If you do not already have one:
 
-The script installs the `omarchy-dev` agent skill on its first run so coding agents know this
-workflow (dev-linked checkout, never edit the integration branch directly,
-verify with `./test/shell` / `./test/cli`, never post PR comments without
-approval). The skill lives in `skills/omarchy-dev/`; link it where your
-agent looks for global skills. To install it before the first run, link it manually:
+   ```bash
+   mkdir -p ~/src
+   git clone --branch quattro https://github.com/omacom/omarchy.git ~/src/omarchy
+   git -C ~/src/omarchy remote add fork git@github.com:YOUR-GITHUB-USERNAME/omarchy.git
+   ```
 
-```bash
-ln -sf ~/src/omarchy-dev-sync/skills/omarchy-dev ~/.config/opencode/skills/omarchy-dev
-# Claude Code and compatible agents also discover these locations:
-ln -sf ~/src/omarchy-dev-sync/skills/omarchy-dev ~/.claude/skills/omarchy-dev
-ln -sf ~/src/omarchy-dev-sync/skills/omarchy-dev ~/.agents/skills/omarchy-dev
-```
+   Replace `YOUR-GITHUB-USERNAME` with your account and create your Omarchy fork on GitHub first. The default remote names are `origin` for upstream and `fork` for your fork. For an existing checkout, inspect `git remote -v` and use the configuration below if your names differ. The installer does not clone Omarchy or create your fork.
 
-Startup installs missing `omarchy-dev` skills in `~/.agents/skills`, `~/.claude/skills`, `${XDG_CONFIG_HOME:-~/.config}/opencode/skills`, and `${CODEX_HOME:-~/.codex}/skills` as symlinks to the bundled skill, creating parent directories as needed. Existing changed copies are replaced with the bundled skill directory, with the previous directory retained as `omarchy-dev.bak.*`. Unchanged copies are skipped; symlinks into this checkout update automatically, and symlinks elsewhere are preserved with a warning. Skill installation and refresh also run after manual Git pulls and with `--no-self-update` or `self_update=0`; `--help` does not install anything.
+2. Clone this tool:
 
-Then from anywhere:
+   ```bash
+   git clone https://github.com/ekollof/omarchy-dev-sync.git ~/src/omarchy-dev-sync
+   cd ~/src/omarchy-dev-sync
+   ```
 
-```bash
-omarchy-dev-sync
-```
+3. If your checkout or remote names differ from the defaults, create or edit `~/.config/omarchy-dev-sync/config` before installing:
 
-Skip the shell restart with `omarchy-dev-sync --no-restart`. Skip the package rebuild with `--no-pkg`.
+   ```bash
+   mkdir -p ~/.config/omarchy-dev-sync
+   # Edit this file; preserve any existing settings.
+   $EDITOR ~/.config/omarchy-dev-sync/config
+   ```
+
+   Example contents:
+
+   ```bash
+   repo=$HOME/src/omarchy
+   upstream=origin
+   fork=fork
+   head=quattro
+   ```
+
+   Both the installer and sync honor `OMARCHY_DEV_SYNC_CONFIG` and `OMARCHY_DEV_SYNC_REPO`. See [Configuration](#configuration) for other settings and optional packaging checkout setup.
+
+4. Run the installer without sudo:
+
+   ```bash
+   ./install.sh
+   ```
+
+   It checks the configured checkout, the persistent link in `/etc/omarchy.conf`, and the running session. If the checkout is not dev-linked, it warns about unstable development code, privileged commands, edge packages, and migrations, then asks `Enable this development setup? [y/N]`. Enter `y` or `yes` to run `omarchy dev link <checkout> --no-reboot`. Declining or closed stdin cancels installation. Run the installer directly in a terminal so you can review and answer the prompt.
+
+   **Development branches and integrated PRs can break the desktop, updates, or boot.** Dev linking trusts your writable checkout for system commands, including privileged commands. Keep backups and a recovery method. `omarchy dev unlink` restores the packaged path after reboot, but does not undo package upgrades or migrations.
+
+   The installer links the launcher at `~/.local/bin/omarchy-dev-sync` and installs the bundled agent skills. It does not run a sync, system update, or reboot. If the correct link is already configured, it leaves it in place.
+
+5. If the installer says the link is not active, reboot before syncing. Changing `OMARCHY_PATH` in a terminal does not activate the link across the desktop session. You can rerun `./install.sh` after reboot to check that the link is configured and active.
+
+6. Ensure `~/.local/bin` is on your `PATH`, then run:
+
+   ```bash
+   omarchy-dev-sync --help
+   omarchy-dev-sync
+   ```
+
+   A normal sync rebuilds integration, runs the full system updater and migrations, refreshes development/runtime packages, and restarts the live shell. It can request sudo authorization. Use `--no-system-update` to skip the system update, `--no-pkg` to skip package builds, or `--no-restart` to skip the shell restart.
+
+For automatic troubleshooting, select an installed default agent with `omarchy default agent <name>`. Failures launch that agent with the sync log and checkout paths. Use `--no-agent` to disable this behavior.
+
+The installer and sync startup install the `omarchy-dev` skill in `~/.agents/skills`, `~/.claude/skills`, `${XDG_CONFIG_HOME:-~/.config}/opencode/skills`, and `${CODEX_HOME:-~/.codex}/skills`. Missing skills become symlinks to this checkout. Changed copies are refreshed with `omarchy-dev.bak.*` backups; unrelated symlinks are preserved with a warning. Manual skill links are not required. Keep this tool’s checkout in place because the launcher and skills link to it.
 
 ## Configuration
 
