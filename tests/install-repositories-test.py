@@ -17,6 +17,7 @@ with tempfile.TemporaryDirectory() as tmp:
 printf '%s\\n' "$*" >> "$CALLS"
 case "$1 $2" in
   'api user') echo developer ;;
+  'repo list') [[ ${EXISTING_FORK:-0} != 1 ]] || echo 'https://github.com/developer/renamed-fork'; exit 0 ;;
   'repo fork') exit 0 ;;
   'repo view') [[ ${BAD_FORK:-0} == 1 ]] || echo "https://github.com/$3" ;;
   'repo clone')
@@ -34,8 +35,8 @@ esac
         return subprocess.run(['bash', '-euc', command], env=dict(env, **extra), input=answer, text=True, capture_output=True)
     repo = base / 'checkout'
     assert run(repo, 'n\n').returncode == 1
-    assert not repo.exists() and not log.exists()
-    assert run(repo).returncode == 1 and not log.exists()
+    assert not repo.exists() and 'repo fork' not in log.read_text()
+    assert run(repo).returncode == 1 and 'repo fork' not in log.read_text()
     result = run(repo, 'yes\n')
     assert result.returncode == 0, result
     def remote(name):
@@ -46,9 +47,15 @@ esac
     assert '--clone=false --remote=false' in calls and '--branch quattro' in calls
     assert run(repo).returncode == 0 and log.read_text() == calls
     subprocess.run(['git', '-C', str(repo), 'remote', 'remove', 'upstream'], check=True)
-    result = run(repo, 'y\n')
+    result = run(repo)
     assert result.returncode == 0 and remote('mine') == 'https://github.com/developer/omarchy.git'
     assert log.read_text() == calls  # no GitHub mutation for an upstream-only repair
+    subprocess.run(['git', '-C', str(repo), 'remote', 'remove', 'mine'], check=True)
+    calls = log.read_text()
+    result = run(repo, EXISTING_FORK='1')
+    assert result.returncode == 0, result
+    assert remote('mine') == 'https://github.com/developer/renamed-fork.git'
+    assert 'repo fork' not in log.read_text()[len(calls):]
     bad = base / 'bad'
     result = run(bad, 'y\n', BAD_FORK='1')
     assert result.returncode == 1 and not bad.exists()

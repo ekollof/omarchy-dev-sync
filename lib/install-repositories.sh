@@ -23,6 +23,29 @@ setup_development_repository() {
   if (( missing_checkout == 0 && missing_upstream == 0 && missing_fork == 0 )); then
     return 0
   fi
+  # Read-only discovery distinguishes an existing GitHub fork from one we
+  # would need to create. Reuse renamed forks by checking their parent.
+  if (( missing_fork )); then
+    account=$(gh api user --jq .login) || return 1
+    [[ -n $account && $account != *[!a-zA-Z0-9-]* ]] || return 1
+    fork_url=$(gh repo list "$account" --fork --limit 1000 --json url,parent \
+      --jq ".[] | select(.parent.nameWithOwner == \"$slug\") | .url" ) || return 1
+    if [[ $fork_url == *$'\n'* ]]; then
+      terminal_error "Error: multiple forks of $slug found; configure the fork remote explicitly." >&2
+      return 1
+    fi
+  fi
+  # Existing local setup plus an existing fork needs no setup confirmation.
+  if (( missing_checkout == 0 )) && { (( missing_fork == 0 )) || [[ -n $fork_url ]]; }; then
+    if (( missing_upstream )); then
+      git -C "$checkout" remote add "$upstream_remote" "https://github.com/$slug.git" || return 1
+    fi
+    if (( missing_fork )); then
+      git -C "$checkout" remote add "$fork_remote" "$fork_url.git" || return 1
+    fi
+    terminal_success "Reused existing development repositories for $slug"
+    return 0
+  fi
   terminal_notice "Set up $slug for development" \
     "Checkout: $checkout" \
     "Upstream remote: $upstream_remote (https://github.com/$slug.git)" \
@@ -34,9 +57,9 @@ setup_development_repository() {
     return 1
   fi
   if (( missing_fork )); then
-    account=$(gh api user --jq .login) || return 1
-    [[ -n $account && $account != *[!a-zA-Z0-9-]* ]] || return 1
-    gh repo fork "$slug" --clone=false --remote=false || return 1
+    if [[ -z $fork_url ]]; then
+      gh repo fork "$slug" --clone=false --remote=false || return 1
+    fi
     # Reject an unrelated repository occupying the expected fork name.
     fork_url=$(gh repo view "$account/${slug##*/}" --json url,parent \
       --jq "select(.parent.nameWithOwner == \"$slug\") | .url") || return 1
