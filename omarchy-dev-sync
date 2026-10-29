@@ -16,6 +16,7 @@ source "$script_dir/lib/self-update.sh"
 source "$script_dir/lib/dev-package-sources.sh"
 source "$script_dir/lib/quirks.sh"
 source "$script_dir/lib/extra-prs.sh"
+source "$script_dir/lib/workflow.sh"
 original_args=("$@")
 package_state_dir=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-dev-sync/packages
 
@@ -32,6 +33,8 @@ pkgs_prs=1
 runtime_packages="quickshell"
 self_update=1
 package_sources=1
+system_update=1
+agent_on_failure=1
 disabled_quirks=""
 
 if [[ -f $config_dir/config ]]; then
@@ -53,9 +56,12 @@ self_update=${OMARCHY_DEV_SYNC_SELF_UPDATE:-$self_update}
 package_sources=${OMARCHY_DEV_SYNC_PACKAGE_SOURCES:-$package_sources}
 disabled_quirks=${OMARCHY_DEV_SYNC_DISABLED_QUIRKS-$disabled_quirks}
 
+system_update=${OMARCHY_DEV_SYNC_SYSTEM_UPDATE:-$system_update}
+agent_on_failure=${OMARCHY_DEV_SYNC_AGENT_ON_FAILURE:-$agent_on_failure}
+
 usage() {
   cat <<USAGE
-Usage: omarchy-dev-sync [--no-restart] [--no-pkg] [--no-self-update] [--no-package-sources]
+Usage: omarchy-dev-sync [--no-restart] [--no-pkg] [--no-self-update] [--no-package-sources] [--no-system-update] [--no-agent]
 
   Fetch $upstream/$head and rebuild $integration by merging every open PR
 of yours (plus optional extra branches) so an omarchy-dev-link checkout
@@ -63,6 +69,8 @@ runs them together. When the dev packages are rebuilt, your open
 omarchy-pkgs PRs are merged into a disposable worktree first, so the
 packages under test include your packaging fixes.
 
+  --no-system-update  Skip the full system update after integration.
+  --no-agent    Do not launch the default agent on failure.
   --no-self-update  Skip checking this script's Git tracking branch for updates.
   --no-package-sources  Leave package mirror/channel configuration unchanged.
   --no-restart  Do not restart the live Omarchy shell after a successful rebuild.
@@ -75,6 +83,8 @@ Config (bash assignments, then extra-branches):
   $config_dir/extra-prs (upstream PR numbers, including other authors)
 
 Environment overrides the config file:
+  OMARCHY_DEV_SYNC_SYSTEM_UPDATE  Run full system update (default: 1)
+  OMARCHY_DEV_SYNC_AGENT_ON_FAILURE  Launch default agent on failure (default: 1)
   OMARCHY_DEV_SYNC_SELF_UPDATE   Update this script before syncing (default: 1)
   OMARCHY_DEV_SYNC_PACKAGE_SOURCES  Align active dev-link mirrors with edge (default: 1)
   OMARCHY_DEV_SYNC_DISABLED_QUIRKS  Space-separated quirk IDs to disable
@@ -101,6 +111,14 @@ while (($#)); do
       usage
       exit 0
       ;;
+    --no-system-update)
+      system_update=0
+      shift
+      ;;
+    --no-agent)
+      agent_on_failure=0
+      shift
+      ;;
     --no-restart)
       restart=0
       shift
@@ -124,6 +142,8 @@ while (($#)); do
       ;;
   esac
 done
+
+start_workflow
 
 if [[ $self_update == 1 ]]; then
   self_update_checkout "$script_dir" "$script_dir/omarchy-dev-sync" "${original_args[@]}"
@@ -572,7 +592,8 @@ restart_live_shell() {
   if omarchy-restart-shell; then
     echo "Restarted the live Omarchy shell so it runs this $integration build."
   else
-    echo "Warning: $integration rebuilt, but the live shell was not restarted." >&2
+    echo "Error: $integration rebuilt, but the live shell was not restarted." >&2
+    return 1
   fi
 }
 
@@ -636,10 +657,14 @@ refresh_runtime_packages() {
   done
 }
 
+if [[ $package_sources == 1 ]]; then
+  ensure_dev_package_sources
+fi
+update_integrated_system
+
 packaged_skew
 if (( pkg_build )); then
   prepare_build_workspace
-  trap cleanup_build_workspace EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
   prepare_pkgs_build_dir
@@ -669,9 +694,6 @@ packaged_skew
 if (( ${#PACKAGED_SKEW[@]} > 0 )); then
   echo "Note: checkout and packaged copies still differ for: ${PACKAGED_SKEW[*]}"
   echo "      Refresh packages before running migrations that require these commands or helpers."
-fi
-if [[ $package_sources == 1 ]]; then
-  ensure_dev_package_sources
 fi
 run_quirks before-restart "$repo"
 restart_live_shell

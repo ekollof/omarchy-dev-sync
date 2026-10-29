@@ -52,7 +52,7 @@ integration branch.
    rewritten; these are personal fork branches).
 4. The script checks its own remote tracking branch first, fast-forwards a clean checkout, and restarts with the original arguments when updated. Local changes or ahead/diverged history are preserved; fetch failures warn and continue. Use `--no-self-update`, config `self_update=0`, or `OMARCHY_DEV_SYNC_SELF_UPDATE=0` to opt out.
    Startup installs missing omarchy-dev skills as symlinks in standard Agents, Claude, OpenCode and Codex skill directories, creating parents as needed. Existing copied skills refresh with backups; symlinks into this checkout follow updates, and unrelated symlinks are preserved. This runs even with self-update disabled; --help does not install skills.
-   Before restarting, the persistent dev link is checked against the synced repo. Known Omarchy stable/rc package and Arch mirror URLs are aligned with edge with backups, retaining custom config. No package databases or system packages are updated by this check; run omarchy update afterwards. It also runs with --no-pkg; opt out with --no-package-sources, package_sources=0, or OMARCHY_DEV_SYNC_PACKAGE_SOURCES=0.
+   Before restarting, the persistent dev link is checked against the synced repo. Known Omarchy stable/rc package and Arch mirror URLs are aligned with edge with backups, retaining custom config. After this check, sync runs the integrated checkout’s full system updater before rebuilding dev/runtime packages. It also runs with --no-pkg; opt out with --no-package-sources, package_sources=0, or OMARCHY_DEV_SYNC_PACKAGE_SOURCES=0.
    Run `omarchy-dev-sync` from anywhere to rebuild and push the integration
    branch, refresh stale dev packages, and restart the live shell. It ends
    back on the integration branch. Flags: `--no-restart` skips the shell
@@ -130,3 +130,7 @@ PR ownership follows GitHub CLI's active account through `--author @me`, for bot
   put an unbinding hook there that wedged in D-state and deadlocked every
   suspend. Sleep hooks must fail open (`timeout`, tolerate errors), never
   block the transaction.
+
+Sync now runs the integrated checkout’s `bin/omarchy-update -y` after integration and mirror alignment, before package builds and shell restart. This includes system packages and migrations. Skip with `--no-system-update`, config `system_update=0`, or `OMARCHY_DEV_SYNC_SYSTEM_UPDATE=0`. `--no-pkg` and `--no-restart` only skip their respective steps.
+
+Failures launch Omarchy’s default agent with a private transcript under `${XDG_STATE_HOME:-~/.local/state}/omarchy-dev-sync/logs`, the failed phase, and checkout paths. Cleanup and build-lock release happen first. The original failure exit status is preserved; interruptions do not launch an agent. Skip with `--no-agent`, config `agent_on_failure=0`, or `OMARCHY_DEV_SYNC_AGENT_ON_FAILURE=0`. Agent retries inherit `OMARCHY_DEV_SYNC_TROUBLESHOOTING=1` to prevent recursive launches. A configured default agent and `omarchy-agent` are required.

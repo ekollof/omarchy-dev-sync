@@ -104,7 +104,7 @@ echo 0.3.1-1.1 > "$TEST_VERSION"
     for name in list(env):
         if name.startswith('OMARCHY_'):
             del env[name]
-    command = ['bash', str(script / 'omarchy-dev-sync'), '--no-restart']
+    command = ['bash', str(script / 'omarchy-dev-sync'), '--no-restart', '--no-system-update', '--no-agent']
     initial_output = run(command, env=env)
     assert initial_output.count('selected #14511') == 1
     assert (source / 'selected').is_file()
