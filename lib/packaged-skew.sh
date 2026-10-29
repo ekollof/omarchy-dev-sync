@@ -7,6 +7,11 @@ packaged_skew() {
   local installed_root=${1:-/} source_file installed_file relative
   for source_file in "$repo"/bin/omarchy-* "$repo"/install/helpers/*; do
     [[ -f $source_file ]] || continue
+    # The installer registers this external tool locally, not as a dev package.
+    if [[ $source_file == "$repo/bin/omarchy-dev-sync" && -L $source_file &&
+          $(readlink -f "$source_file") == "${script_dir:-}/omarchy-dev-sync" ]]; then
+      continue
+    fi
     relative=${source_file#"$repo"/}
     if [[ $relative == bin/* ]]; then
       installed_file="$installed_root/usr/bin/${source_file##*/}"

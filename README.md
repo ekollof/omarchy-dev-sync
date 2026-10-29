@@ -89,16 +89,18 @@ Run these steps as your normal user in a terminal on an existing Omarchy install
 
    **Development branches and integrated PRs can break the desktop, updates, or boot.** Dev linking trusts your writable checkout for system commands, including privileged commands. Keep backups and a recovery method. `omarchy dev unlink` restores the packaged path after reboot, but does not undo package upgrades or migrations.
 
-   The installer links the launcher at `~/.local/bin/omarchy-dev-sync` and installs the bundled agent skills. It does not run a sync, system update, or reboot. If the correct link is already configured, it leaves it in place.
+   The installer links the launcher at `~/.local/bin/omarchy-dev-sync`, registers `omarchy dev sync` with a symlink in the configured checkout’s `bin/`, and installs the bundled agent skills. The command link is ignored locally through Git’s `info/exclude`; it is not committed or included in package-skew checks. Existing commands are preserved, and registration conflicts stop installation. It does not run a sync, system update, or reboot. If the correct link is already configured, it leaves it in place.
 
 5. If the installer says the link is not active, reboot before syncing. Changing `OMARCHY_PATH` in a terminal does not activate the link across the desktop session. You can rerun `./install.sh` after reboot to check that the link is configured and active.
 
 6. Ensure `~/.local/bin` is on your `PATH`, then run:
 
    ```bash
-   omarchy-dev-sync --help
-   omarchy-dev-sync
+   omarchy dev sync --help
+   omarchy dev sync
    ```
+
+   The standalone `omarchy-dev-sync` command remains available. Rerun `./install.sh` to register the subcommand on an existing installation.
 
    A normal sync rebuilds integration, runs the full system updater and migrations, refreshes development/runtime packages, and restarts the live shell. It can request sudo authorization. Use `--no-system-update` to skip the system update, `--no-pkg` to skip package builds, or `--no-restart` to skip the shell restart.
 

@@ -70,6 +70,23 @@ WARNING
   persistent=$repo
 fi
 
+# Omarchy discovers commands beside its dispatcher, rather than across PATH.
+command_link=$repo/bin/omarchy-dev-sync
+if git -C "$repo" ls-files --error-unmatch bin/omarchy-dev-sync >/dev/null 2>&1 ||
+  { [[ -e $command_link || -L $command_link ]] &&
+    [[ ! -L $command_link || $(readlink -f "$command_link") != "$script_dir/omarchy-dev-sync" ]]; }; then
+  terminal_error "Error: refusing to replace existing Omarchy command: $command_link" >&2
+  exit 1
+fi
+ln -sfn "$script_dir/omarchy-dev-sync" "$command_link"
+exclude_file=$(git -C "$repo" rev-parse --git-path info/exclude)
+[[ $exclude_file == /* ]] || exclude_file=$repo/$exclude_file
+mkdir -p "${exclude_file%/*}"
+if ! grep -qxF '/bin/omarchy-dev-sync' "$exclude_file" 2>/dev/null; then
+  printf '\n/bin/omarchy-dev-sync\n' >> "$exclude_file"
+fi
+terminal_success 'Registered omarchy dev sync in the development checkout'
+
 install_dir=$HOME/.local/bin
 mkdir -p "$install_dir"
 launcher=$install_dir/omarchy-dev-sync

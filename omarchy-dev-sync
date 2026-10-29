@@ -1,5 +1,11 @@
 #!/bin/bash
 
+# omarchy:summary=Integrate development PRs, update the system, and refresh dev packages
+# omarchy:group=dev
+# omarchy:name=sync
+# omarchy:args=[--no-restart] [--no-pkg] [--no-system-update] [--no-agent] [--no-self-update] [--no-package-sources]
+# omarchy:examples=omarchy dev sync | omarchy dev sync --no-system-update
+
 # Sync an Omarchy checkout with upstream and rebuild an integration branch
 # from your open PRs, so an `omarchy dev link` environment tests every
 # PR patch together. Open omarchy-pkgs PRs of yours are merged into a

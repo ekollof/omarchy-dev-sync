@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory() as tmp:
     project.mkdir()
     shutil.copytree(root / 'lib', project / 'lib')
     shutil.copytree(root / 'skills', project / 'skills')
-    (project / 'omarchy-dev-sync').touch()
+    shutil.copy2(root / 'omarchy-dev-sync', project / 'omarchy-dev-sync')
     conf = base / 'omarchy.conf'
     script = project / 'install.sh'
     script.write_text((root / 'install.sh').read_text().replace('/etc/omarchy.conf', str(conf)))
@@ -54,4 +54,18 @@ with tempfile.TemporaryDirectory() as tmp:
     result = run('')
     assert result.returncode == 0 and 'configured and active' in result.stdout
     assert not calls.exists()
+    assert (repo / 'bin/omarchy-dev-sync').resolve() == project / 'omarchy-dev-sync'
+    ignored = subprocess.check_output(['git', '-C', str(repo), 'check-ignore', 'bin/omarchy-dev-sync'], text=True)
+    assert ignored.strip() == 'bin/omarchy-dev-sync'
+    # Exercise the real dispatcher when available, entirely in the fixture tree.
+    dispatcher = Path.home() / 'src/omarchy/bin/omarchy'
+    if dispatcher.exists():
+        shutil.copy2(dispatcher, repo / 'bin/omarchy')
+        result = subprocess.run(['bash', str(repo / 'bin/omarchy'), 'dev', 'sync', '--help'], env=env, capture_output=True, text=True)
+        assert result.returncode == 0 and 'Integrate development PRs' in result.stdout, result
+    (repo / 'bin/omarchy-dev-sync').unlink()
+    (repo / 'bin/omarchy-dev-sync').write_text('existing command')
+    result = run('')
+    assert result.returncode == 1 and 'refusing to replace' in result.stderr
+    assert (repo / 'bin/omarchy-dev-sync').read_text() == 'existing command'
 print('ok - consent, EOF, dev-link invocation, pending reboot and active setup')
