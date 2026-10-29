@@ -41,8 +41,11 @@ PR ownership follows the active GitHub CLI account: both source and packaging qu
 
 ```bash
 git clone https://github.com/ekollof/omarchy-dev-sync.git ~/src/omarchy-dev-sync
-ln -sf ~/src/omarchy-dev-sync/omarchy-dev-sync ~/.local/bin/omarchy-dev-sync
+cd ~/src/omarchy-dev-sync
+./install.sh
 ```
+
+The installer uses the configured `repo` (default `~/src/omarchy`), which must already be an Omarchy checkout. It checks `/etc/omarchy.conf` and the running session. If the checkout is not dev-linked, it explains the risks of development code, privileged commands, edge packages and migrations, then requires an explicit yes before running `omarchy dev link`. Declining or closed stdin cancels installation. A configured link that is not yet active needs a reboot; the installer reports this and never reboots automatically. It installs the launcher and agent skills without running a sync or system update.
 
 The script installs the `omarchy-dev` agent skill on its first run so coding agents know this
 workflow (dev-linked checkout, never edit the integration branch directly,
