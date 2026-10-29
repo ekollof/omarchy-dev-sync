@@ -6,9 +6,10 @@ script_dir=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 source "$script_dir/lib/terminal.sh"
 terminal_init
 source "$script_dir/lib/github-auth.sh"
+source "$script_dir/lib/install-repositories.sh"
 if [[ ${1:-} == --help || ${1:-} == -h ]]; then
   echo 'Usage: ./install.sh'
-  echo 'Install the launcher and skills; ask before enabling an Omarchy dev link.'
+  echo 'Install the launcher and skills; ask before repository setup and enabling an Omarchy dev link.'
   exit 0
 fi
 (( $# == 0 )) || { terminal_error 'Error: unexpected arguments (use --help).' >&2; exit 1; }
@@ -17,9 +18,20 @@ terminal_heading "Install omarchy-dev-sync"
 require_github_auth
 config_dir=${OMARCHY_DEV_SYNC_CONFIG:-$HOME/.config/omarchy-dev-sync}
 repo=$HOME/src/omarchy
+upstream=origin
+fork=fork
+head=quattro
+pkgs_repo=$HOME/Work/omarchy/omarchy-pkgs
 [[ ! -f $config_dir/config ]] || source "$config_dir/config"
 repo=${OMARCHY_DEV_SYNC_REPO:-$repo}
-repo=$(realpath -e "$repo") || { terminal_error 'Error: create your Omarchy checkout and configure repo first.' >&2; exit 1; }
+upstream=${OMARCHY_DEV_SYNC_UPSTREAM:-$upstream}
+fork=${OMARCHY_DEV_SYNC_FORK:-$fork}
+head=${OMARCHY_DEV_SYNC_HEAD:-$head}
+pkgs_repo=${OMARCHY_DEV_SYNC_PKGS_REPO:-$pkgs_repo}
+repo=$(realpath -m "$repo")
+pkgs_repo=$(realpath -m "$pkgs_repo")
+setup_development_repository "$repo" omacom/omarchy "$upstream" "$fork" "$head"
+setup_development_repository "$pkgs_repo" omacom/omarchy-pkgs origin fork
 git -C "$repo" rev-parse --is-inside-work-tree >/dev/null
 for directory in bin default shell; do
   [[ -d $repo/$directory ]] || { terminal_error "Error: missing Omarchy directory: $repo/$directory" >&2; exit 1; }

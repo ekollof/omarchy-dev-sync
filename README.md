@@ -45,15 +45,7 @@ PR ownership follows the active GitHub CLI account: both source and packaging qu
 
 Run these steps as your normal user in a terminal on an existing Omarchy installation. You need Git, Python 3, an authenticated GitHub CLI (`gh auth login`), and sudo access for dev-link setup and package installation.
 
-1. Prepare an Omarchy source checkout. If you do not already have one:
-
-   ```bash
-   mkdir -p ~/src
-   git clone --branch quattro https://github.com/omacom/omarchy.git ~/src/omarchy
-   git -C ~/src/omarchy remote add fork git@github.com:YOUR-GITHUB-USERNAME/omarchy.git
-   ```
-
-   Replace `YOUR-GITHUB-USERNAME` with your account and create your Omarchy fork on GitHub first. The default remote names are `origin` for upstream and `fork` for your fork. For an existing checkout, inspect `git remote -v` and use the configuration below if your names differ. The installer does not clone Omarchy or create your fork.
+1. Choose checkout locations. Defaults are `~/src/omarchy` for Omarchy and `~/Work/omarchy/omarchy-pkgs` for packaging. Existing checkouts are supported; the installer can create missing ones after confirmation.
 
 2. Clone this tool:
 
@@ -77,6 +69,7 @@ Run these steps as your normal user in a terminal on an existing Omarchy install
    upstream=origin
    fork=fork
    head=quattro
+   pkgs_repo=$HOME/Work/omarchy/omarchy-pkgs
    ```
 
    Both the installer and sync honor `OMARCHY_DEV_SYNC_CONFIG` and `OMARCHY_DEV_SYNC_REPO`. See [Configuration](#configuration) for other settings and optional packaging checkout setup.
@@ -87,7 +80,11 @@ Run these steps as your normal user in a terminal on an existing Omarchy install
    ./install.sh
    ```
 
-   It checks the configured checkout, the persistent link in `/etc/omarchy.conf`, and the running session. If the checkout is not dev-linked, it warns about unstable development code, privileged commands, edge packages, and migrations, then asks `Enable this development setup? [y/N]`. Enter `y` or `yes` to run `omarchy dev link <checkout> --no-reboot`. Declining or closed stdin cancels installation. Run the installer directly in a terminal so you can review and answer the prompt.
+   For each repository (`omacom/omarchy` and `omacom/omarchy-pkgs`), it checks the configured checkout and remotes. Missing checkouts or remotes trigger a confirmation listing the target path and upstream. If you agree, it creates or reuses your active GitHub account’s public fork, verifies the fork’s parent, clones missing checkouts, and adds missing remotes. Omarchy clones start on the configured `head` (default `quattro`); packaging clones use the upstream default branch. Existing checkouts, branches, files, and remotes are preserved. Declining or closed stdin stops installation; setup already completed for an earlier repository remains in place.
+
+   Omarchy uses configured `upstream`/`fork` remote names (defaults `origin`/`fork`); packaging uses `origin`/`fork`. A missing upstream alone is added without creating a fork when a fork remote already exists. GitHub API/authentication errors stop setup. No changes are made to GitHub until you confirm.
+
+   It then checks the persistent link in `/etc/omarchy.conf`, and the running session. If the checkout is not dev-linked, it warns about unstable development code, privileged commands, edge packages, and migrations, then asks `Enable this development setup? [y/N]`. Enter `y` or `yes` to run `omarchy dev link <checkout> --no-reboot`. Declining or closed stdin cancels installation. Run the installer directly in a terminal so you can review and answer the prompt.
 
    **Development branches and integrated PRs can break the desktop, updates, or boot.** Dev linking trusts your writable checkout for system commands, including privileged commands. Keep backups and a recovery method. `omarchy dev unlink` restores the packaged path after reboot, but does not undo package upgrades or migrations.
 
@@ -147,6 +144,8 @@ For a reviewed PR by another author, put its upstream PR number in `extra-prs` (
 ## Validation
 
 ```bash
+python3 tests/install-repositories-test.py
+python3 tests/install-test.py
 python3 tests/self-update-test.py
 python3 tests/extra-prs-test.py
 bash tests/skill-refresh-test.sh

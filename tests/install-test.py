@@ -15,6 +15,12 @@ with tempfile.TemporaryDirectory() as tmp:
     for name in ('bin', 'default', 'shell'):
         (repo / name).mkdir(parents=True)
     subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+    for remote in ('origin', 'fork'):
+        subprocess.run(['git', '-C', str(repo), 'remote', 'add', remote, 'https://example.invalid/omarchy'], check=True)
+    pkgs = base / 'pkgs'
+    subprocess.run(['git', 'init', '-q', str(pkgs)], check=True)
+    for remote in ('origin', 'fork'):
+        subprocess.run(['git', '-C', str(pkgs), 'remote', 'add', remote, 'https://example.invalid/pkgs'], check=True)
     project = base / 'tool'
     project.mkdir()
     shutil.copytree(root / 'lib', project / 'lib')
@@ -34,7 +40,7 @@ with tempfile.TemporaryDirectory() as tmp:
         path = tools / name
         path.write_text('#!/bin/bash\n' + body + '\n')
         path.chmod(0o755)
-    env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(home / '.config'), CODEX_HOME=str(home / '.codex'), OMARCHY_DEV_SYNC_REPO=str(repo), OMARCHY_DEV_SYNC_CONFIG=str(home / 'config'), PATH=f'{tools}:/usr/bin:/bin', SESSION='/usr/share/omarchy', CALLS=str(calls))
+    env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(home / '.config'), CODEX_HOME=str(home / '.codex'), OMARCHY_DEV_SYNC_REPO=str(repo), OMARCHY_DEV_SYNC_PKGS_REPO=str(pkgs), OMARCHY_DEV_SYNC_CONFIG=str(home / 'config'), PATH=f'{tools}:/usr/bin:/bin', SESSION='/usr/share/omarchy', CALLS=str(calls))
     def run(answer):
         return subprocess.run(['bash', str(script)], input=answer, env=env, capture_output=True, text=True)
     for answer in ('n\n', ''):
