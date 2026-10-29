@@ -48,10 +48,20 @@ with tempfile.TemporaryDirectory() as tmp:
         assert result.returncode == 1, result
         assert 'WARNING' in result.stdout and not calls.exists()
         assert not (home / '.local/bin/omarchy-dev-sync').exists()
+        assert not (home / 'config').exists()
     result = run('yes\n')
     assert result.returncode == 0, result
     assert calls.read_text().splitlines() == ['dev', 'link', str(repo), '--no-reboot']
     assert 'not active' in result.stdout
+    generated_config = home / 'config/config'
+    config_text = generated_config.read_text()
+    assert f'repo={repo}' in config_text and f'pkgs_repo={pkgs}' in config_text
+    assert 'self_update=1' in config_text and 'system_update=1' in config_text
+    assert generated_config.stat().st_mode & 0o777 == 0o600
+    assert (home / 'config/extra-branches').is_file()
+    assert (home / 'config/extra-prs').is_file()
+    generated_config.write_text(config_text + '# Keep my settings\n')
+    (home / 'config/extra-prs').write_text('# Keep my selections\n123\n')
     calls.unlink()
     conf.write_text(f'export OMARCHY_PATH="{repo}"\n')
     result = run('')
@@ -60,6 +70,8 @@ with tempfile.TemporaryDirectory() as tmp:
     env['SESSION'] = str(repo)
     result = run('')
     assert result.returncode == 0 and 'configured and active' in result.stdout
+    assert generated_config.read_text() == config_text + '# Keep my settings\n'
+    assert (home / 'config/extra-prs').read_text() == '# Keep my selections\n123\n'
     assert not calls.exists()
     assert (repo / 'bin/omarchy-dev-sync').resolve() == project / 'omarchy-dev-sync'
     ignored = subprocess.check_output(['git', '-C', str(repo), 'check-ignore', 'bin/omarchy-dev-sync'], text=True)

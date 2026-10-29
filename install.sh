@@ -7,6 +7,7 @@ source "$script_dir/lib/terminal.sh"
 terminal_init
 source "$script_dir/lib/github-auth.sh"
 source "$script_dir/lib/install-repositories.sh"
+source "$script_dir/lib/install-config.sh"
 if [[ ${1:-} == --help || ${1:-} == -h ]]; then
   echo 'Usage: ./install.sh'
   echo 'Install the launcher and skills; ask before repository setup and enabling an Omarchy dev link.'
@@ -83,6 +84,8 @@ WARNING
   omarchy dev link "$repo" --no-reboot
   persistent=$repo
 fi
+
+initialize_sync_config
 
 # Omarchy discovers commands beside its dispatcher, rather than across PATH.
 command_link=$repo/bin/omarchy-dev-sync
