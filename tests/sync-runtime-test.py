@@ -56,6 +56,10 @@ with tempfile.TemporaryDirectory() as directory:
     log.write_text('')
     mock = {
         'gh': """#!/bin/bash
+if [[ $1 == auth ]]; then
+  [[ ${TEST_AUTH_FAIL:-0} != 1 ]]
+  exit $?
+fi
 if [[ $1 == api ]]; then
   printf 'open\\n'
   exit 0
@@ -105,6 +109,12 @@ echo 0.3.1-1.1 > "$TEST_VERSION"
         if name.startswith('OMARCHY_'):
             del env[name]
     command = ['bash', str(script / 'omarchy-dev-sync'), '--no-restart', '--no-system-update', '--no-agent']
+    before = run(['git', 'rev-parse', 'HEAD'], source)
+    failure = subprocess.run(command, env=dict(env, TEST_AUTH_FAIL='1'), capture_output=True, text=True)
+    assert failure.returncode != 0 and 'gh auth login --hostname github.com' in failure.stderr
+    assert run(['git', 'rev-parse', 'HEAD'], source) == before
+    assert not log.read_text()
+    print('ok - missing GitHub authentication stops before integration and package work')
     initial_output = run(command, env=env)
     assert initial_output.count('selected #14511') == 1
     assert (source / 'selected').is_file()

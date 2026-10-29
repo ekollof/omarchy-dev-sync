@@ -26,6 +26,7 @@ source "$script_dir/lib/quirks.sh"
 source "$script_dir/lib/extra-prs.sh"
 source "$script_dir/lib/workflow.sh"
 source "$script_dir/lib/sync-lock.sh"
+source "$script_dir/lib/github-auth.sh"
 original_args=("$@")
 package_state_dir=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-dev-sync/packages
 
@@ -174,7 +175,7 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
-command -v gh >/dev/null || { terminal_error "Error: gh not installed." >&2; exit 1; }
+require_github_auth
 
 upstream_url=$(git remote get-url "$upstream")
 slug=${upstream_url#*github.com[:/]}

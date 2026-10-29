@@ -27,6 +27,7 @@ with tempfile.TemporaryDirectory() as tmp:
     tools.mkdir()
     calls = base / 'calls'
     for name, body in {
+        'gh': '[[ $* == "auth status --active --hostname github.com" ]]',
         'systemctl': 'printf "OMARCHY_PATH=%s\\n" "$SESSION"',
         'omarchy': 'printf "%s\\n" "$@" > "$CALLS"',
     }.items():

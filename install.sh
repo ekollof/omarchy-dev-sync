@@ -5,6 +5,7 @@ set -euo pipefail
 script_dir=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 source "$script_dir/lib/terminal.sh"
 terminal_init
+source "$script_dir/lib/github-auth.sh"
 if [[ ${1:-} == --help || ${1:-} == -h ]]; then
   echo 'Usage: ./install.sh'
   echo 'Install the launcher and skills; ask before enabling an Omarchy dev link.'
@@ -13,6 +14,7 @@ fi
 (( $# == 0 )) || { terminal_error 'Error: unexpected arguments (use --help).' >&2; exit 1; }
 (( EUID != 0 )) || { terminal_error 'Error: run as your normal user, without sudo.' >&2; exit 1; }
 terminal_heading "Install omarchy-dev-sync"
+require_github_auth
 config_dir=${OMARCHY_DEV_SYNC_CONFIG:-$HOME/.config/omarchy-dev-sync}
 repo=$HOME/src/omarchy
 [[ ! -f $config_dir/config ]] || source "$config_dir/config"

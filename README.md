@@ -37,6 +37,8 @@ Qt 6.12 compatibility is portable: installed Qt 6.12 or newer automatically incl
 
 - Optional, for the automatic package refresh: an [omarchy-pkgs](https://github.com/omacom/omarchy-pkgs) checkout at `~/Work/omarchy/omarchy-pkgs` (or `OMARCHY_PKGBUILDS_DIR` pointed at one), and sudo for terminal installs (pkexec for noninteractive callers). Runtime builds also need their PKGBUILD build dependencies; terminal calls let makepkg install them, while agent/background calls must install missing dependencies separately. Your open PRs against omacom/omarchy-pkgs are merged into a throwaway worktree for the build; the checkout itself is never modified. Point `OMARCHY_PKGBUILDS_DIR` at a directory to use those PKGBUILDs as-is and skip the PR merge.
 
+The installer and each sync verify authentication for the active `github.com` account before setup or integration. If the check fails, run `gh auth login --hostname github.com`; for an existing login, check token validity and network access with `gh auth status --active --hostname github.com`. Inactive accounts do not block this check.
+
 PR ownership follows the active GitHub CLI account: both source and packaging queries use `gh pr list --author @me`. Switch accounts with `gh auth switch`; no username is configured or hardcoded in the script. Upstream, fork and self-update URLs come from Git remotes. The clone URL below identifies this project's repository, not the account whose PRs are selected.
 
 ## Install
