@@ -43,6 +43,10 @@ PR ownership follows the active GitHub CLI account: both source and packaging qu
 
 ## Install
 
+Use `install.sh` for the recommended setup. If you want help choosing paths or adapting an existing checkout, use the agent prompt below. Manual setup is the last option.
+
+### 1. Recommended: run install.sh
+
 Run these steps as your normal user in a terminal on an existing Omarchy installation. You need Git, Python 3, an authenticated GitHub CLI (`gh auth login`), and sudo access for dev-link setup and package installation.
 
 1. Choose checkout locations. Defaults are `~/src/omarchy` for Omarchy and `~/Work/omarchy/omarchy-pkgs` for packaging. Existing checkouts are supported; the installer can create missing ones after confirmation.
@@ -106,6 +110,82 @@ Run these steps as your normal user in a terminal on an existing Omarchy install
 For automatic troubleshooting, select an installed default agent with `omarchy default agent <name>`. Failures launch that agent with the sync log and checkout paths. Use `--no-agent` to disable this behavior.
 
 The installer and sync startup install the `omarchy-dev` skill in `~/.agents/skills`, `~/.claude/skills`, `${XDG_CONFIG_HOME:-~/.config}/opencode/skills`, and `${CODEX_HOME:-~/.codex}/skills`. Missing skills become symlinks to this checkout. Changed copies are refreshed with `omarchy-dev.bak.*` backups; unrelated symlinks are preserved with a warning. Manual skill links are not required. Keep this tool’s checkout in place because the launcher and skills link to it.
+
+### 2. Set up with an agent
+
+Give your coding agent this prompt. It should inspect your existing setup and use the installer, leaving its confirmations for you to answer:
+
+```text
+Set up https://github.com/ekollof/omarchy-dev-sync on this Omarchy machine.
+Read README.md, install.sh, and the bundled omarchy-dev skill before making
+changes. Prefer install.sh over recreating its logic manually.
+
+Check Git, Python 3, GitHub CLI authentication, existing Omarchy and
+omarchy-pkgs checkouts, remotes, forks, and the persistent and active dev link.
+Reuse existing repositories and forks, including renamed forks. Preserve
+working files, existing remote URLs, and configuration. Use the documented
+default paths unless existing checkouts or my preferences suggest otherwise.
+
+Clone the tool if needed and configure its checkout paths and remote names.
+Run install.sh in an interactive terminal where I can answer its prompts,
+or give me the exact command to run there. Do not supply yes automatically.
+Explain the development-branch risks before asking me to approve a new fork,
+checkout, or dev link. Never reboot or run the first sync/system update without
+my approval. If activation needs a reboot, explain that and stop there.
+
+Verify the launcher, omarchy dev sync --help, and agent skill links once the
+dev link is active. Report what changed and any remaining steps.
+```
+
+### 3. Manual setup
+
+Use this only if you want to manage each step yourself. Read the development risks in the installer instructions above first. These commands assume **new checkouts at the default paths**; for existing checkouts, inspect and reuse their remotes rather than cloning over them or replacing URLs.
+
+Authenticate GitHub CLI and clone the tool:
+
+```bash
+gh auth login --hostname github.com
+mkdir -p ~/src
+git clone https://github.com/ekollof/omarchy-dev-sync.git ~/src/omarchy-dev-sync
+```
+
+Create or reuse your forks and clone upstream. Running `gh repo fork` below can create public GitHub forks; only run it if you want that setup:
+
+```bash
+gh repo fork omacom/omarchy --clone=false --remote=false
+gh repo fork omacom/omarchy-pkgs --clone=false --remote=false
+gh repo clone omacom/omarchy ~/src/omarchy -- --branch quattro --origin origin
+mkdir -p ~/Work/omarchy
+gh repo clone omacom/omarchy-pkgs ~/Work/omarchy/omarchy-pkgs -- --origin origin
+```
+
+Add a `fork` remote to each checkout using your fork’s actual URL. Replace `YOUR-GITHUB-USERNAME` below; if a fork was renamed, use its actual repository name too:
+
+```bash
+git -C ~/src/omarchy remote add fork https://github.com/YOUR-GITHUB-USERNAME/omarchy.git
+git -C ~/Work/omarchy/omarchy-pkgs remote add fork https://github.com/YOUR-GITHUB-USERNAME/omarchy-pkgs.git
+```
+
+For other paths or Omarchy remote names, create the config shown in [Configuration](#configuration). Packaging uses `origin` and `fork`. Then register the launchers and refresh the bundled skills:
+
+```bash
+mkdir -p ~/.local/bin
+ln -s ~/src/omarchy-dev-sync/omarchy-dev-sync ~/.local/bin/omarchy-dev-sync
+ln -s ~/src/omarchy-dev-sync/omarchy-dev-sync ~/src/omarchy/bin/omarchy-dev-sync
+# Keep this machine-local registration out of source commits.
+printf '\n/bin/omarchy-dev-sync\n' >> ~/src/omarchy/.git/info/exclude
+bash -c 'source "$HOME/src/omarchy-dev-sync/lib/self-update.sh"; refresh_local_dev_skills "$HOME/src/omarchy-dev-sync/skills/omarchy-dev"'
+```
+
+Do not replace an existing command or unrelated symlink. Keep `~/.local/bin` on your `PATH` and retain the tool checkout because these links point into it.
+
+When you have reviewed the risks and are ready to trust the checkout for system commands, enable the dev link as your normal user:
+
+```bash
+omarchy dev link ~/src/omarchy --no-reboot
+```
+
+Reboot at a convenient time to activate the link across the desktop. After reboot, verify `omarchy dev sync --help`. Run the first `omarchy dev sync` when you are ready for integration, system updates, migrations, package builds, and a shell restart. The skip flags described above also apply to manual installations.
 
 ## Configuration
 
