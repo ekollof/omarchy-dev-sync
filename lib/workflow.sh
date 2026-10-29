@@ -29,6 +29,7 @@ finish_workflow() {
   if [[ -n ${build_lock:-} ]]; then exec {build_lock}>&-; fi
   exec 1>&$workflow_stdout 2>&$workflow_stderr
   wait "$workflow_logger" "$workflow_error_logger"
+  if declare -F release_sync_lock >/dev/null; then release_sync_lock; fi
   if (( status != 0 && status != 130 && status != 143 )) &&
     [[ $agent_on_failure == 1 && ${OMARCHY_DEV_SYNC_TROUBLESHOOTING:-0} != 1 ]]; then
     prompt="Diagnose and fix the omarchy-dev-sync $workflow_phase failure (exit $status). Read the transcript at $workflow_log. Sync tool source: $script_dir. Omarchy checkout: $repo. Integration branch: $integration."
@@ -47,7 +48,8 @@ finish_workflow() {
 update_integrated_system() {
   [[ $system_update == 1 ]] || return 0
   workflow_phase='system update'
-  echo "Updating the system from $repo ($integration)..."
+  terminal_heading "Update system from $integration"
+  echo "Checkout: $repo"
   # Use the integrated updater and its migrations, not a packaged/other checkout.
   OMARCHY_PATH="$repo" PATH="$repo/bin:$PATH" "$repo/bin/omarchy-update" -y
   workflow_phase=sync

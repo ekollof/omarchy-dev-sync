@@ -98,7 +98,7 @@ echo 0.3.1-1.1 > "$TEST_VERSION"
         file = tools / name
         file.write_text(content)
         file.chmod(0o755)
-    env = dict(os.environ, HOME=str(home), XDG_STATE_HOME=str(home / '.local/state'),
+    env = dict(os.environ, HOME=str(home), XDG_RUNTIME_DIR=str(home / '.runtime'), XDG_CACHE_HOME=str(home / '.cache'), XDG_STATE_HOME=str(home / '.local/state'),
                PATH=str(tools) + ':' + os.environ['PATH'], TEST_VERSION=str(state),
                TEST_QT=str(qt), TEST_BUILDS=str(log), TEST_FAILURE=str(temp / 'fail'))
     for name in list(env):

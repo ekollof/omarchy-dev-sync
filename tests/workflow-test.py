@@ -15,7 +15,9 @@ with tempfile.TemporaryDirectory() as tmp:
     agent.write_text('#!/bin/bash\nprintf "%s\\n" "$OMARCHY_DEV_SYNC_TROUBLESHOOTING" "$PWD" "$@" > "$MARKER"\n')
     agent.chmod(0o755)
     env = dict(os.environ, HOME=tmp, XDG_STATE_HOME=tmp, PATH=f'{tools}:/usr/bin:/bin', MARKER=str(marker))
-    prelude = f'''source '{root}/lib/workflow.sh'
+    prelude = f'''source '{root}/lib/terminal.sh'
+terminal_init
+source '{root}/lib/workflow.sh'
 script_dir='{root}'
 repo='{base}'
 integration=integration-prs

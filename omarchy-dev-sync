@@ -9,6 +9,8 @@
 set -euo pipefail
 
 script_dir=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+source "$script_dir/lib/terminal.sh"
+terminal_init
 source "$script_dir/lib/package-state.sh"
 source "$script_dir/lib/packaged-skew.sh"
 source "$script_dir/lib/build-workspace.sh"
@@ -17,6 +19,7 @@ source "$script_dir/lib/dev-package-sources.sh"
 source "$script_dir/lib/quirks.sh"
 source "$script_dir/lib/extra-prs.sh"
 source "$script_dir/lib/workflow.sh"
+source "$script_dir/lib/sync-lock.sh"
 original_args=("$@")
 package_state_dir=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-dev-sync/packages
 
@@ -136,13 +139,15 @@ while (($#)); do
       shift
       ;;
     *)
-      echo "Error: unknown option: $1" >&2
+      terminal_error "Error: unknown option: $1" >&2
       usage >&2
       exit 1
       ;;
   esac
 done
 
+acquire_sync_lock
+terminal_heading "Sync Omarchy development checkout"
 start_workflow
 
 if [[ $self_update == 1 ]]; then
@@ -152,18 +157,18 @@ refresh_local_dev_skills "$script_dir/skills/omarchy-dev"
 unset OMARCHY_DEV_SYNC_SELF_UPDATED
 
 if [[ ! -d $repo/.git ]]; then
-  echo "Error: not a git repo: $repo" >&2
+  terminal_error "Error: not a git repo: $repo" >&2
   exit 1
 fi
 cd "$repo"
 repo=$(git rev-parse --show-toplevel)
 
 if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "Error: $repo has uncommitted changes. Commit or stash them, then rerun." >&2
+  terminal_error "Error: $repo has uncommitted changes. Commit or stash them, then rerun." >&2
   exit 1
 fi
 
-command -v gh >/dev/null || { echo "Error: gh not installed." >&2; exit 1; }
+command -v gh >/dev/null || { terminal_error "Error: gh not installed." >&2; exit 1; }
 
 upstream_url=$(git remote get-url "$upstream")
 slug=${upstream_url#*github.com[:/]}
@@ -174,13 +179,14 @@ start_branch=$(git branch --show-current)
 git config rerere.enabled true
 git config rerere.autoUpdate true
 
+terminal_heading "Fetch upstream and fork"
 git fetch "$upstream" --prune
 git fetch "$fork" --prune
 
 # Fast-forward the local head branch from upstream. A failure means the local
 # branch diverged; warn and keep going with the remote tip for the merge.
 if ! git fetch "$upstream" "$head:$head" 2>/dev/null; then
-  echo "Warning: local $head diverged from $upstream/$head; not updated." >&2
+  terminal_warning "Warning: local $head diverged from $upstream/$head; not updated." >&2
 fi
 
 declare -A pr_seen=()
@@ -191,7 +197,7 @@ pr_labels=()
 # branch down to upstream.
 pr_tsv=
 if ! pr_tsv=$(gh pr list --repo "$slug" --author @me --state open --json number,title,headRefName --jq '.[] | [.number, .headRefName, .title] | @tsv'); then
-  echo "Error: gh pr list failed (GitHub API unreachable?). Leaving $integration alone." >&2
+  terminal_error "Error: gh pr list failed (GitHub API unreachable?). Leaving $integration alone." >&2
   exit 1
 fi
 while IFS=$'\t' read -r number name title; do
@@ -216,7 +222,7 @@ fi
 
 for branch in "${extra_branches[@]}"; do
   if [[ -n ${pr_seen[$branch]+x} ]]; then
-    echo "Warning: extra-branches lists $branch, which already has an open PR; remove that line." >&2
+    terminal_warning "Warning: extra-branches lists $branch, which already has an open PR; remove that line." >&2
   fi
 done
 
@@ -233,15 +239,15 @@ for branch in "${pr_branches[@]}" "${extra_branches[@]}"; do
   [[ $branch == "$integration" ]] && continue
   worktree=$(branch_worktree "$branch")
   if [[ -n $worktree && $worktree != "$repo" ]]; then
-    echo "Warning: $branch is checked out in $worktree; merging $fork/$branch without updating local." >&2
+    terminal_warning "Warning: $branch is checked out in $worktree; merging $fork/$branch without updating local." >&2
   else
     fetch_err=$(git fetch "$fork" "$branch:$branch" 2>&1) || {
       if [[ $fetch_err == *'checked out at'* ]]; then
-        echo "Warning: $branch is checked out elsewhere; merging $fork/$branch without updating local." >&2
+        terminal_warning "Warning: $branch is checked out elsewhere; merging $fork/$branch without updating local." >&2
       elif [[ $fetch_err == *'non-fast-forward'* ]]; then
-        echo "Warning: local $branch diverged from $fork/$branch; merging the fork tip as-is." >&2
+        terminal_warning "Warning: local $branch diverged from $fork/$branch; merging the fork tip as-is." >&2
       else
-        echo "Warning: could not update local $branch; merging $fork/$branch as-is." >&2
+        terminal_warning "Warning: could not update local $branch; merging $fork/$branch as-is." >&2
         printf '%s\n' "$fetch_err" | sed 's/^/  /' >&2
       fi
     }
@@ -249,7 +255,7 @@ for branch in "${pr_branches[@]}" "${extra_branches[@]}"; do
   if git show-ref --verify --quiet "refs/remotes/$fork/$branch"; then
     merge_refs+=("$fork/$branch")
   else
-    echo "Warning: $branch not found on $fork remote; skipping." >&2
+    terminal_warning "Warning: $branch not found on $fork remote; skipping." >&2
   fi
 done
 
@@ -271,7 +277,7 @@ while IFS= read -r number; do
 done <<<"$retired_prs"
 for number in "${extra_prs[@]}"; do
   if [[ ! $number =~ ^[1-9][0-9]*$ ]]; then
-    echo "Error: invalid upstream PR number in extra-prs: $number" >&2
+    terminal_error "Error: invalid upstream PR number in extra-prs: $number" >&2
     exit 1
   fi
   if [[ -n ${retired_pr_seen[$number]+x} ]]; then
@@ -282,7 +288,7 @@ for number in "${extra_prs[@]}"; do
   selected_pr_seen[$number]=1
   ref="refs/remotes/$upstream/pull/$number"
   if ! git fetch --quiet "$upstream" "+pull/$number/head:$ref"; then
-    echo "Error: could not fetch selected PR #$number; leaving $integration alone." >&2
+    terminal_error "Error: could not fetch selected PR #$number; leaving $integration alone." >&2
     exit 1
   fi
   merge_refs+=("$ref")
@@ -326,6 +332,7 @@ open(p, "w").write(s)
 PYEOF
 }
 
+terminal_heading "Build integration branch: $integration"
 git checkout -q --no-track -B "$integration" "$upstream/$head"
 
 restore_on_failure() {
@@ -338,7 +345,7 @@ restore_on_failure() {
   if [[ -n $start_branch ]]; then
     git checkout "$start_branch"
   fi
-  echo "Error: merge conflict while building $integration. Old state restored. Resolve by hand." >&2
+  terminal_error "Error: merge conflict while building $integration. Old state restored. Resolve by hand." >&2
   if [[ -n $conflicted ]]; then
     echo "Conflicted files:" >&2
     while IFS= read -r file; do
@@ -387,7 +394,7 @@ if git fetch --quiet "$fork" "$integration" 2>/dev/null; then
   remote_tip=$(git rev-parse --verify "refs/remotes/$fork/$integration" 2>/dev/null || true)
 else
   remote_tip=
-  echo "Warning: could not re-fetch $fork/$integration; not pushing." >&2
+  terminal_warning "Warning: could not re-fetch $fork/$integration; not pushing." >&2
 fi
 if [[ -n $remote_tip ]]; then
   if git push --quiet "$fork" "refs/heads/$integration" --force-with-lease="refs/heads/$integration:$remote_tip"; then
@@ -395,14 +402,14 @@ if [[ -n $remote_tip ]]; then
     git branch -u "$fork/$integration" >/dev/null
   else
     push_status="push skipped (remote moved during push or push failed)"
-    echo "Warning: $push_status." >&2
+    terminal_warning "Warning: $push_status." >&2
   fi
 elif git show-ref --verify --quiet "refs/remotes/$fork/$integration"; then
-  echo "Warning: push skipped (could not refresh $fork/$integration)." >&2
+  terminal_warning "Warning: push skipped (could not refresh $fork/$integration)." >&2
 elif git push --quiet -u "$fork" "refs/heads/$integration"; then
   push_status="pushed to $fork (new branch)"
 else
-  echo "Warning: push skipped (creating $fork/$integration failed)." >&2
+  terminal_warning "Warning: push skipped (creating $fork/$integration failed)." >&2
 fi
 
 newest=$(git rev-parse --short HEAD)
@@ -436,7 +443,7 @@ prepare_pkgs_build_dir() {
   # PR heads may live on any fork, so fetch them through the upstream's
   # pull refs instead of tracking branches per fork.
   if ! git -C "$pkgs_repo" fetch --quiet origin --prune 2>/dev/null; then
-    echo "Error: could not fetch omarchy-pkgs; refusing to omit packaging patches." >&2
+    terminal_error "Error: could not fetch omarchy-pkgs; refusing to omit packaging patches." >&2
     return 1
   fi
   git -C "$pkgs_repo" worktree prune 2>/dev/null || true
@@ -445,17 +452,17 @@ prepare_pkgs_build_dir() {
   slug=${slug%.git}
   base=$(git -C "$pkgs_repo" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null) || base=""
   if [[ -z $slug || -z $base ]]; then
-    echo "Error: could not resolve the omarchy-pkgs upstream." >&2
+    terminal_error "Error: could not resolve the omarchy-pkgs upstream." >&2
     return 1
   fi
   if ! pr_numbers=$(gh pr list --repo "$slug" --author @me --state open --json number --jq '.[].number' 2>/dev/null); then
-    echo "Error: gh pr list failed for $slug; refusing to omit packaging patches." >&2
+    terminal_error "Error: gh pr list failed for $slug; refusing to omit packaging patches." >&2
     return 1
   fi
   pr_numbers=$(printf '%s\n' "$pr_numbers" | sort -n | tr '\n' ' ')
   pkgs_worktree=$(mktemp -d "$build_workspace/pkgs.XXXXXX") || return 1
   if ! git -C "$pkgs_repo" worktree add --detach --quiet "$pkgs_worktree" "$base" 2>/dev/null; then
-    echo "Error: could not create the omarchy-pkgs worktree." >&2
+    terminal_error "Error: could not create the omarchy-pkgs worktree." >&2
     cleanup_pkgs_worktree
     return 1
   fi
@@ -466,7 +473,7 @@ prepare_pkgs_build_dir() {
   fi
   for n in $pr_numbers; do
     if ! git -C "$pkgs_worktree" fetch --quiet origin "pull/$n/head" 2>/dev/null; then
-      echo "Error: could not fetch omarchy-pkgs PR #$n; refusing to omit it." >&2
+      terminal_error "Error: could not fetch omarchy-pkgs PR #$n; refusing to omit it." >&2
       return 1
     fi
     if ! merge_output=$(git -C "$pkgs_worktree" merge --quiet --no-edit FETCH_HEAD 2>&1); then
@@ -480,7 +487,7 @@ prepare_pkgs_build_dir() {
         fi
       fi
       if [[ -n $conflicted ]]; then
-        echo "Error: unresolved conflict in omarchy-pkgs PR #$n; refusing to omit it." >&2
+        terminal_error "Error: unresolved conflict in omarchy-pkgs PR #$n; refusing to omit it." >&2
         printf '%s\n' "$merge_output" "$conflicted" >&2
         git -C "$pkgs_worktree" merge --abort 2>/dev/null || true
         return 1
@@ -490,7 +497,7 @@ prepare_pkgs_build_dir() {
     fi
   done
   if [[ ! -f $pkgs_worktree/pkgbuilds/omarchy-dev/PKGBUILD ]]; then
-    echo "Error: merged omarchy-pkgs tree has no PKGBUILDs." >&2
+    terminal_error "Error: merged omarchy-pkgs tree has no PKGBUILDs." >&2
     cleanup_pkgs_worktree
     return 1
   fi
@@ -509,12 +516,12 @@ rebuild_dev_packages() {
   local -a built_pkgs=()
   pkgbuilds_dir=$pkgs_pkgbuilds_dir
   if [[ ! -f $pkgbuilds_dir/omarchy-dev/PKGBUILD ]]; then
-    echo "Note: no omarchy-pkgs checkout at $pkgbuilds_dir; leaving the installed package stale."
+    terminal_warning "Note: no omarchy-pkgs checkout at $pkgbuilds_dir; leaving the installed package stale."
     echo "      Clone omacom/omarchy-pkgs there (or point OMARCHY_PKGBUILDS_DIR at one) to automate this."
     return 1
   fi
   if ! command -v makepkg >/dev/null; then
-    echo "Note: makepkg not found; leaving the installed package stale." >&2
+    terminal_warning "Note: makepkg not found; leaving the installed package stale." >&2
     return 1
   fi
   sha=$(git -C "$repo" rev-parse --short HEAD)
@@ -545,7 +552,7 @@ rebuild_dev_packages() {
       }
       { print }
     ' "$dir/PKGBUILD" >"$dir/PKGBUILD.tmp" || ! mv "$dir/PKGBUILD.tmp" "$dir/PKGBUILD"; then
-      echo "Warning: could not rewrite the pkgver of $pkg." >&2
+      terminal_warning "Warning: could not rewrite the pkgver of $pkg." >&2
       return 1
     fi
     sed -i "s/^pkgver=.*/pkgver=dev.$sha$dirty/" "$dir/PKGBUILD"
@@ -567,18 +574,18 @@ rebuild_dev_packages() {
     # -d: omarchy-dev lists omarchy-settings-dev as a dependency that only
     # exists after the single-transaction install below.
     if ! (cd "$dir" && OMARCHY_SRC="$repo" makepkg -d --skipchecksums --noconfirm >/dev/null); then
-      echo "Warning: makepkg failed for $pkg." >&2
+      terminal_warning "Warning: makepkg failed for $pkg." >&2
       return 1
     fi
     built=$(ls -t "$dir"/*.pkg.tar.* 2>/dev/null | grep -v '\.sig$' | head -1) || built=""
     [[ -n $built ]] || {
-      echo "Warning: no package archive was built for $pkg." >&2
+      terminal_warning "Warning: no package archive was built for $pkg." >&2
       return 1
     }
     built_pkgs+=("$built")
   done
   if ! install_packages "${built_pkgs[@]}"; then
-    echo "Warning: the dev package install failed; packaged copies are stale." >&2
+    terminal_warning "Warning: the dev package install failed; packaged copies are stale." >&2
     return 1
   fi
 }
@@ -592,7 +599,7 @@ restart_live_shell() {
   if omarchy-restart-shell; then
     echo "Restarted the live Omarchy shell so it runs this $integration build."
   else
-    echo "Error: $integration rebuilt, but the live shell was not restarted." >&2
+    terminal_error "Error: $integration rebuilt, but the live shell was not restarted." >&2
     return 1
   fi
 }
@@ -612,7 +619,7 @@ refresh_runtime_packages() {
   local -a archives=()
   for package in $runtime_packages; do
     if [[ ! $package =~ ^[a-zA-Z0-9][a-zA-Z0-9@._+-]*$ ]]; then
-      echo "Error: invalid runtime package name: $package" >&2
+      terminal_error "Error: invalid runtime package name: $package" >&2
       return 1
     fi
     pacman -Q "$package" >/dev/null 2>&1 || continue
@@ -621,7 +628,7 @@ refresh_runtime_packages() {
       recipe=$script_dir/packages/$package
     fi
     if [[ ! -f $recipe/PKGBUILD ]]; then
-      echo "Error: no recipe for installed runtime package $package." >&2
+      terminal_error "Error: no recipe for installed runtime package $package." >&2
       return 1
     fi
     fingerprint=$(package_fingerprint "$recipe") || return 1
@@ -648,7 +655,7 @@ refresh_runtime_packages() {
       fi
     done
     if [[ -z $archive ]]; then
-      echo "Error: no runtime package archive was built for $package." >&2
+      terminal_error "Error: no runtime package archive was built for $package." >&2
       return 1
     fi
     install_packages "$archive" || return 1
@@ -664,6 +671,7 @@ update_integrated_system
 
 packaged_skew
 if (( pkg_build )); then
+  terminal_heading "Refresh development and runtime packages"
   prepare_build_workspace
   trap 'exit 130' INT
   trap 'exit 143' TERM
@@ -680,21 +688,22 @@ if (( pkg_build )); then
         record_package omarchy-dev "$dev_fingerprint"
         record_package omarchy-settings-dev "$dev_fingerprint"
       else
-        echo "Error: dev package refresh failed; keeping the running shell." >&2
+        terminal_error "Error: dev package refresh failed; keeping the running shell." >&2
         exit 1
       fi
     fi
   fi
   if ! refresh_runtime_packages; then
-    echo "Error: runtime package refresh failed; keeping the running shell." >&2
+    terminal_error "Error: runtime package refresh failed; keeping the running shell." >&2
     exit 1
   fi
 fi
 packaged_skew
 if (( ${#PACKAGED_SKEW[@]} > 0 )); then
-  echo "Note: checkout and packaged copies still differ for: ${PACKAGED_SKEW[*]}"
+  terminal_warning "Note: checkout and packaged copies still differ for: ${PACKAGED_SKEW[*]}"
   echo "      Refresh packages before running migrations that require these commands or helpers."
 fi
+terminal_heading "Activate integration build"
 run_quirks before-restart "$repo"
 restart_live_shell
 
@@ -702,6 +711,7 @@ if command -v omarchy-notification-send >/dev/null; then
   omarchy-notification-send "omarchy-dev-sync" "$integration rebuilt on $upstream/$head: $pr_count PRs, $newest. $push_status." >/dev/null 2>&1 || true
 fi
 
+terminal_heading "Sync complete"
 echo "Upstream $head: $(git rev-parse --short "$upstream/$head")"
 echo "$integration: $newest ($pr_count PRs). $push_status."
 echo "Checked out in $repo; dev-link environment now runs the integration build."

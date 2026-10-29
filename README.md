@@ -6,6 +6,8 @@ If you keep several Omarchy PRs in flight, testing them one branch at a time mis
 
 ## What it does
 
+Only one sync can run at a time per user, including across checkouts. A second invocation exits immediately with status `75` before self-update, Git operations, or package work. The lock survives self-update and is released on exit or before launching the troubleshooting agent. `--help` remains available while a sync is running.
+
 Before syncing, it checks its own Git tracking branch and fast-forwards a clean checkout to the latest commit, then restarts with the original arguments. Local changes, detached HEAD, missing tracking branches, ahead/diverged history, or fetch failures leave the existing version running with a warning. Copies outside a Git checkout run without self-updating. `--help` never fetches. Use `--no-self-update`, `self_update=0` in the config, or `OMARCHY_DEV_SYNC_SELF_UPDATE=0` to disable it.
 
 1. Fetches the upstream remote (`origin`) and your fork (`fork`).
