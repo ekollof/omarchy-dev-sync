@@ -19,6 +19,7 @@ with tempfile.TemporaryDirectory() as directory:
     run('git', 'init', '-q', '-b', 'master', str(publisher))
     run('git', 'config', 'user.name', 'Test', cwd=publisher)
     run('git', 'config', 'user.email', 'test@example.invalid', cwd=publisher)
+    (publisher / '.gitignore').write_text((root / '.gitignore').read_text())
     (publisher / 'lib').mkdir()
     (publisher / 'lib/self-update.sh').write_text((root / 'lib/self-update.sh').read_text())
     script = '''#!/bin/bash
@@ -43,6 +44,8 @@ printf '<%s>\\n' "$@"
     run('git', 'clone', '-q', '-b', 'master', str(remote), str(clone))
     env = dict(os.environ)
     env['HOME'] = str(temp / 'home')
+    env['XDG_RUNTIME_DIR'] = str(temp / 'runtime')
+    env['OMARCHY_DEV_SYNC_AGENT_ON_FAILURE'] = '0'
     env['XDG_CONFIG_HOME'] = str(temp / 'config-home')
     env['CODEX_HOME'] = str(temp / 'codex-home')
     installed_skill = temp / 'home/.agents/skills/omarchy-dev'
@@ -63,6 +66,10 @@ printf '<%s>\\n' "$@"
     assert 'local changes' in run(*command, env=env)
     assert run('git', 'rev-parse', 'HEAD', cwd=clone).strip() == initial
     (clone / 'untracked').unlink()
+    cache = clone / 'quirks/example/__pycache__'
+    cache.mkdir(parents=True)
+    (cache / 'resolve.cpython-314.pyc').write_bytes(b'cached bytecode')
+    assert not run('git', 'status', '--porcelain', cwd=clone).strip()
     output = run(*command, env=env)
     assert 'new\n<--no-pkg>\n<two words>\n<>\n' in output
     assert output.count('Checking omarchy-dev-sync') == 1

@@ -1,3 +1,7 @@
 *~
 *.swp
 .DS_Store
+
+# Python tests import quirk helpers and create bytecode caches.
+__pycache__/
+*.py[cod]
