@@ -17,9 +17,19 @@ with tempfile.TemporaryDirectory() as tmp:
 printf '%s\\n' "$*" >> "$CALLS"
 case "$1 $2" in
   'api user') echo developer ;;
-  'repo list') [[ ${EXISTING_FORK:-0} != 1 ]] || echo 'https://github.com/developer/renamed-fork'; exit 0 ;;
+  'repo list')
+    if [[ ${EXISTING_FORK:-0} == 1 ]]; then
+      printf '%s' '[{"url":"https://github.com/developer/renamed-fork","parent":{"owner":{"login":"omacom"},"name":"omarchy"}}]'
+    else
+      echo '[]'
+    fi | jq -r "${@: -1}"
+    ;;
   'repo fork') exit 0 ;;
-  'repo view') [[ ${BAD_FORK:-0} == 1 ]] || echo "https://github.com/$3" ;;
+  'repo view')
+    parent=omacom
+    [[ ${BAD_FORK:-0} != 1 ]] || parent=unrelated
+    printf '{"url":"https://github.com/%s","parent":{"owner":{"login":"%s"},"name":"omarchy"}}' "$3" "$parent" | jq -r "${@: -1}"
+    ;;
   'repo clone')
     git init -q "$4"
     git -C "$4" remote add "${@: -3:1}" "https://github.com/$3.git"

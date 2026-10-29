@@ -29,7 +29,7 @@ setup_development_repository() {
     account=$(gh api user --jq .login) || return 1
     [[ -n $account && $account != *[!a-zA-Z0-9-]* ]] || return 1
     fork_url=$(gh repo list "$account" --fork --limit 1000 --json url,parent \
-      --jq ".[] | select(.parent.nameWithOwner == \"$slug\") | .url" ) || return 1
+      --jq ".[] | select((.parent.owner.login + \"/\" + .parent.name) == \"$slug\") | .url" ) || return 1
     if [[ $fork_url == *$'\n'* ]]; then
       terminal_error "Error: multiple forks of $slug found; configure the fork remote explicitly." >&2
       return 1
@@ -59,13 +59,13 @@ setup_development_repository() {
   if (( missing_fork )); then
     if [[ -z $fork_url ]]; then
       gh repo fork "$slug" --clone=false --remote=false || return 1
-    fi
-    # Reject an unrelated repository occupying the expected fork name.
-    fork_url=$(gh repo view "$account/${slug##*/}" --json url,parent \
-      --jq "select(.parent.nameWithOwner == \"$slug\") | .url") || return 1
-    if [[ $fork_url != "https://github.com/$account/"* ]]; then
-      terminal_error "Error: cannot verify your fork of $slug." >&2
-      return 1
+      # Reject an unrelated repository occupying the expected fork name.
+      fork_url=$(gh repo view "$account/${slug##*/}" --json url,parent \
+        --jq "select((.parent.owner.login + \"/\" + .parent.name) == \"$slug\") | .url") || return 1
+      if [[ $fork_url != "https://github.com/$account/"* ]]; then
+        terminal_error "Error: cannot verify your fork of $slug." >&2
+        return 1
+      fi
     fi
   fi
   if (( missing_checkout )); then
