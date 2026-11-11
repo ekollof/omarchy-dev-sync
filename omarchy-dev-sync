@@ -25,6 +25,7 @@ source "$script_dir/lib/dev-package-sources.sh"
 source "$script_dir/lib/quirks.sh"
 source "$script_dir/lib/extra-prs.sh"
 source "$script_dir/lib/workflow.sh"
+source "$script_dir/lib/restart.sh"
 source "$script_dir/lib/sync-lock.sh"
 source "$script_dir/lib/github-auth.sh"
 original_args=("$@")
@@ -593,20 +594,6 @@ rebuild_dev_packages() {
   done
   if ! install_packages "${built_pkgs[@]}"; then
     terminal_warning "Warning: the dev package install failed; packaged copies are stale." >&2
-    return 1
-  fi
-}
-
-restart_live_shell() {
-  local session_path
-  (( restart )) || return 0
-  session_path=$(systemctl --user show-environment 2>/dev/null | sed -n 's/^OMARCHY_PATH=//p' | tail -n 1)
-  [[ $session_path == "$repo" ]] || return 0
-  command -v omarchy-restart-shell >/dev/null || return 0
-  if omarchy-restart-shell; then
-    echo "Restarted the live Omarchy shell so it runs this $integration build."
-  else
-    terminal_error "Error: $integration rebuilt, but the live shell was not restarted." >&2
     return 1
   fi
 }

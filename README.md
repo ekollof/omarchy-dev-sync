@@ -17,7 +17,7 @@ Before syncing, it checks its own Git tracking branch and fast-forwards a clean 
 5. Force-pushes `integration-prs` to the fork with `--force-with-lease`.
 6. Rebuilds and installs the `omarchy-settings-dev` and `omarchy-dev` packages from the rebuilt checkout when the packaged copies behind pkexec or their packaging recipes have gone stale, so helpers like `omarchy-windows-vm` keep elevating. Your open omarchy-pkgs PRs are merged into a disposable worktree first, so the packages under test include your packaging fixes. Both packages go into a single pacman transaction (installed separately, the settings package conflicts with the installed release omarchy). The dev builds carry `epoch=1` so `dev.<sha>` sorts above official releases and `omarchy update` does not replace them.
 7. Checks installed runtime packages independently of Omarchy helper differences. Quickshell uses the merged omarchy-pkgs recipe when available, otherwise the bundled Arch recipe with upstream Qt 6.12 fix `5d5d498`. A recipe/patch change, an installed Qt dependency change, or replacement of the installed package triggers a rebuild. Successful installations are recorded under `${XDG_STATE_HOME:-~/.local/state}/omarchy-dev-sync/packages`; unchanged packages are skipped. A build/install failure stops before restarting the shell.
-8. Restarts the live Omarchy shell when this checkout is the session `OMARCHY_PATH`.
+8. Restarts the live Omarchy shell when this checkout is the session `OMARCHY_PATH`. A secure session lock deliberately blocks that restart so the lock client is not killed; the sync then reports the deferred restart instead of failing. The rebuilt shell loads at the next login or after `omarchy restart shell`.
 
 Before restarting, it checks the persistent dev link in `/etc/omarchy.conf`. When that link points at the synced checkout, it aligns known Omarchy stable/rc URLs in `/etc/pacman.conf` and `/etc/pacman.d/mirrorlist` with edge, preserving custom repositories, settings and comments. Changed files get `*.bak.omarchy-dev-sync.*` backups. The full system update now runs automatically after integration and mirror alignment, before package rebuilds so runtime packages build against the upgraded dependencies. This prevents development migrations from requesting packages missing from stable. Packaged installations and other linked checkouts are untouched. Repair needs sudo in a terminal or pkexec otherwise; failure stops the sync. This check also runs with `--no-pkg`; use `--no-package-sources`, config `package_sources=0`, or `OMARCHY_DEV_SYNC_PACKAGE_SOURCES=0` to opt out.
 
@@ -235,6 +235,7 @@ python3 tests/package-version-merge-test.py
 python3 tests/dev-package-sources-test.py
 python3 tests/shell-color-compat-test.py
 bash tests/quirks-test.sh
+bash tests/restart-live-shell-test.sh
 bash tests/package-state-test.sh
 python3 tests/sync-runtime-test.py
 ```

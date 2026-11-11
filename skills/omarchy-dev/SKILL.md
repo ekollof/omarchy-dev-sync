@@ -55,7 +55,9 @@ integration branch.
    Before restarting, the persistent dev link is checked against the synced repo. Known Omarchy stable/rc package and Arch mirror URLs are aligned with edge with backups, retaining custom config. After this check, sync runs the integrated checkout’s full system updater before rebuilding dev/runtime packages. It also runs with --no-pkg; opt out with --no-package-sources, package_sources=0, or OMARCHY_DEV_SYNC_PACKAGE_SOURCES=0.
    Run `omarchy-dev-sync` from anywhere to rebuild and push the integration
    branch, refresh stale dev packages, and restart the live shell. It ends
-   back on the integration branch. Flags: `--no-restart` skips the shell
+   back on the integration branch. A secure session lock defers the shell
+   restart with guidance instead of failing the sync; the build loads at the
+   next login or after `omarchy restart shell`. Flags: `--no-restart` skips the shell
    restart, `--no-pkg` skips the package rebuild. The package refresh
    includes your open omarchy-pkgs PRs (merged into a throwaway worktree),
    so verify packaging changes by running the sync and checking the
