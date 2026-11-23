@@ -15,20 +15,22 @@ case $2 in
   repos/test/repo/pulls/2) echo closed ;;
   repos/test/repo/pulls/3) echo 'Not Found (HTTP 404)' >&2; exit 1 ;;
   repos/test/repo/pulls/4) echo 'API rate limit exceeded (HTTP 403)' >&2; exit 1 ;;
+  repos/test/repo/pulls/5) echo open; echo 'hint: use gh event listen' >&2 ;;
+  repos/test/repo/pulls/6) echo closed; echo 'hint: use gh event listen' >&2 ;;
   repos/test/repo) [[ ${DENY_REPO:-0} == 0 ]] ;;
   *) exit 99 ;;
 esac
 ''')
     gh.chmod(0o755)
     selection = temp / 'extra-prs'
-    original = '# selections\n1 # open\n2 # closed or merged\n3\n\n'
+    original = '# selections\n1 # open\n2 # closed or merged\n3\n5 # open with gh hint\n6 # closed with gh hint\n\n'
     env = dict(os.environ, PATH=f'{temp}:{os.environ["PATH"]}')
     command = ['bash', '-c', 'set -euo pipefail; source "$1"; cleanup_extra_prs "$2" test/repo',
                'test', str(root / 'lib/extra-prs.sh'), str(selection)]
     selection.write_text(original)
     selection.chmod(0o600)
     subprocess.run(command, env=env, check=True)
-    assert selection.read_text() == '# selections\n1 # open\n\n'
+    assert selection.read_text() == '# selections\n1 # open\n5 # open with gh hint\n\n'
     assert selection.stat().st_mode & 0o777 == 0o600
     for content, overrides in [(original + '4\n', {}), (original, {'DENY_REPO': '1'}),
                                (original + 'bad\n', {})]:
